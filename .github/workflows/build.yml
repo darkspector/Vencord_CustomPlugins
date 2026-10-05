@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write # needed to create/update the release
+  actions: write # needed to re-enable this workflow (keepalive)
 
 jobs:
   build:
@@ -69,3 +70,10 @@ jobs:
             dist.zip
             plugin/installer-core.ps1
             plugin/vencord_install.bat
+
+      # GitHub auto-disables scheduled workflows after 60 days without repo
+      # activity; re-enabling via the API resets that timer.
+      - name: Keepalive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable build.yml -R ${{ github.repository }}

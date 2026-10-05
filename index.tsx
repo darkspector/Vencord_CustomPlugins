@@ -1,7 +1,8 @@
 import { definePluginSettings } from "@api/Settings";
+import { Button } from "@components/Button";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType } from "@utils/types";
-import { Button, ChannelStore, Forms, GuildStore, RestAPI, SearchableSelect, Toasts, useEffect, useState, UserStore, VoiceStateStore } from "@webpack/common";
+import { ChannelStore, Forms, GuildStore, RestAPI, SearchableSelect, showToast, useEffect, useState, UserStore, VoiceStateStore } from "@webpack/common";
 
 const logger = new Logger("ChannelConnectSound");
 
@@ -52,11 +53,7 @@ async function previewSound(soundId: string, soundName: string, showErrorToast =
     } catch (e) {
         logger.warn("Local playback failed", e);
         if (showErrorToast) {
-            Toasts.show({
-                message: `ChannelConnectSound: could not play "${soundName}" — CDN URL may have changed`,
-                type: Toasts.Type.FAILURE,
-                id: Toasts.genId(),
-            });
+            showToast(`ChannelConnectSound: could not play "${soundName}" — CDN URL may have changed`, "failure");
         }
         return false;
     }
@@ -150,14 +147,13 @@ function SoundMappingManager() {
                             </Forms.FormText>
                             <div style={{ display: "flex", gap: 6 }}>
                                 <Button
-                                    size={Button.Sizes.SMALL}
-                                    look={Button.Looks.OUTLINED}
+                                    size="small"
+                                    variant="secondary"
                                     onClick={() => previewSound(m.soundId, m.soundName, true)}
                                 >▶</Button>
                                 <Button
-                                    size={Button.Sizes.SMALL}
-                                    color={Button.Colors.RED}
-                                    look={Button.Looks.OUTLINED}
+                                    size="small"
+                                    variant="dangerSecondary"
                                     onClick={() => removeMapping(m.guildId)}
                                 >Remove</Button>
                             </div>
@@ -185,7 +181,7 @@ function SoundMappingManager() {
                 onChange={v => setNewSoundId(v)}
                 maxVisibleItems={8}
                 closeOnSelect
-                disabled={!newGuildId || loading}
+                isDisabled={!newGuildId || loading}
             />
 
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -197,7 +193,7 @@ function SoundMappingManager() {
                 </Button>
                 {previewCandidate && (
                     <Button
-                        look={Button.Looks.OUTLINED}
+                        variant="secondary"
                         onClick={() => previewSound(previewCandidate.sound_id, previewCandidate.name, true)}
                     >▶ Preview</Button>
                 )}
@@ -283,11 +279,7 @@ export default definePlugin({
                             : e?.body?.code === 50168
                                 ? "ChannelConnectSound: not connected to channel yet — try increasing the delay"
                                 : `ChannelConnectSound: "${entry.soundName}" no longer exists in ${entry.guildName} — update your settings`;
-                        Toasts.show({
-                            message: msg,
-                            type: Toasts.Type.FAILURE,
-                            id: Toasts.genId(),
-                        });
+                        showToast(msg, "failure");
                     }
                 }
             }, JOIN_DELAY_MS);

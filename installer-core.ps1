@@ -40,23 +40,15 @@ if (Test-Path (Join-Path $dataDir "dist")) { Remove-Item -Recurse -Force (Join-P
 Expand-Archive -Path $distZip -DestinationPath $dataDir -Force
 
 # 3. Ensure Vencord's installer CLI is present (use cache if available)
-if (Test-Path $installer) {
-    Write-Host "[3/4] Vencord installer already present, skipping download."
-} else {
-    Write-Host "[3/4] " -NoNewline
-    Get-Installer
-}
+# Always fetch the latest: a stale cached CLI can "succeed" against a newer
+# Discord layout without actually patching it correctly.
+Write-Host "[3/4] " -NoNewline
+Get-Installer
 
-# 4. Patch Discord, pointing it at our local dist. If the cached installer is
-# stale and the patch fails, refresh it and retry once.
+# 4. Patch Discord, pointing it at our local dist.
 Write-Host "[4/4] Patching Discord (stable)..."
 if (-not (Invoke-Patch)) {
-    Write-Host "Patch failed — refreshing installer and retrying..." -ForegroundColor Yellow
-    Remove-Item $installer -Force -ErrorAction SilentlyContinue
-    Get-Installer
-    if (-not (Invoke-Patch)) {
-        throw "Patch failed even after refreshing the installer. See the errors above."
-    }
+    throw "Patch failed. See the errors above."
 }
 
 # Restart Discord
