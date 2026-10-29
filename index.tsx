@@ -1,8 +1,10 @@
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
+import { Heading } from "@components/Heading";
+import { Paragraph } from "@components/Paragraph";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType } from "@utils/types";
-import { ChannelStore, Forms, GuildStore, RestAPI, SearchableSelect, showToast, useEffect, useState, UserStore, VoiceStateStore } from "@webpack/common";
+import { ChannelStore, GuildStore, RestAPI, SearchableSelect, showToast, useEffect, useState, UserStore, VoiceStateStore } from "@webpack/common";
 
 const logger = new Logger("ChannelConnectSound");
 
@@ -134,11 +136,11 @@ function SoundMappingManager() {
             padding: "7px 10px", marginBottom: 4,
             background: "var(--background-secondary)", borderRadius: 4,
         }}>
-            <Forms.FormText>
+            <Paragraph>
                 <strong>{m.guildName}</strong>
                 <span style={{ color: "var(--text-muted)", margin: "0 8px" }}>→</span>
                 {m.emoji ? `${m.emoji} ` : ""}{m.soundName}
-            </Forms.FormText>
+            </Paragraph>
             <div style={{ display: "flex", gap: 6 }}>
                 <Button
                     size="small"
@@ -162,9 +164,9 @@ function SoundMappingManager() {
         <div>
             {/* Configured mappings */}
             {mappings.length === 0 ? (
-                <Forms.FormText style={{ marginBottom: 8 }}>
+                <Paragraph style={{ marginBottom: 8 }}>
                     No servers configured yet — add one below.
-                </Forms.FormText>
+                </Paragraph>
             ) : (
                 <div style={{ marginBottom: 16 }}>
                     {active.map(renderRow)}
@@ -180,7 +182,7 @@ function SoundMappingManager() {
             )}
 
             {/* Add / replace form */}
-            <Forms.FormTitle>Add / Replace</Forms.FormTitle>
+            <Heading>Add / Replace</Heading>
             <SearchableSelect
                 placeholder="Select a server..."
                 options={guilds}
@@ -190,7 +192,7 @@ function SoundMappingManager() {
                 closeOnSelect
             />
 
-            <Forms.FormTitle style={{ marginTop: 8 }}>Sound</Forms.FormTitle>
+            <Heading style={{ marginTop: 8 }}>Sound</Heading>
             <SearchableSelect
                 placeholder={loading ? "Loading…" : !newGuildId ? "Select a server first" : newSounds.length === 0 ? "No sounds in this server" : "Select a sound..."}
                 options={soundOptions}
