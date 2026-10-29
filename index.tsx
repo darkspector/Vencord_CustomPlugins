@@ -121,6 +121,39 @@ function SoundMappingManager() {
         setNewSounds([]);
     }
 
+    // Show the server's current name; mappings for servers you've left keep their saved name
+    const active = mappings
+        .filter(m => GuildStore.getGuild(m.guildId))
+        .map(m => ({ ...m, guildName: GuildStore.getGuild(m.guildId)!.name }))
+        .sort((a, b) => a.guildName.localeCompare(b.guildName));
+    const orphaned = mappings.filter(m => !GuildStore.getGuild(m.guildId));
+
+    const renderRow = (m: Mapping) => (
+        <div key={m.guildId} style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "7px 10px", marginBottom: 4,
+            background: "var(--background-secondary)", borderRadius: 4,
+        }}>
+            <Forms.FormText>
+                <strong>{m.guildName}</strong>
+                <span style={{ color: "var(--text-muted)", margin: "0 8px" }}>→</span>
+                {m.emoji ? `${m.emoji} ` : ""}{m.soundName}
+            </Forms.FormText>
+            <div style={{ display: "flex", gap: 6 }}>
+                <Button
+                    size="small"
+                    variant="secondary"
+                    onClick={() => previewSound(m.soundId, m.soundName, true)}
+                >▶</Button>
+                <Button
+                    size="small"
+                    variant="dangerSecondary"
+                    onClick={() => removeMapping(m.guildId)}
+                >Remove</Button>
+            </div>
+        </div>
+    );
+
     const canAdd = !!newGuildId && !!newSoundId && !loading;
     const isReplace = !!newGuildId && mappings.some(m => m.guildId === newGuildId);
     const previewCandidate = newSoundId ? newSounds.find(s => s.sound_id === newSoundId) : null;
@@ -134,31 +167,15 @@ function SoundMappingManager() {
                 </Forms.FormText>
             ) : (
                 <div style={{ marginBottom: 16 }}>
-                    {mappings.map(m => (
-                        <div key={m.guildId} style={{
-                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                            padding: "7px 10px", marginBottom: 4,
-                            background: "var(--background-secondary)", borderRadius: 4,
-                        }}>
-                            <Forms.FormText>
-                                <strong>{m.guildName}</strong>
-                                <span style={{ color: "var(--text-muted)", margin: "0 8px" }}>→</span>
-                                {m.emoji ? `${m.emoji} ` : ""}{m.soundName}
-                            </Forms.FormText>
-                            <div style={{ display: "flex", gap: 6 }}>
-                                <Button
-                                    size="small"
-                                    variant="secondary"
-                                    onClick={() => previewSound(m.soundId, m.soundName, true)}
-                                >▶</Button>
-                                <Button
-                                    size="small"
-                                    variant="dangerSecondary"
-                                    onClick={() => removeMapping(m.guildId)}
-                                >Remove</Button>
-                            </div>
-                        </div>
-                    ))}
+                    {active.map(renderRow)}
+                    {orphaned.length > 0 && (
+                        <details style={{ marginTop: 8 }}>
+                            <summary style={{ cursor: "pointer", color: "var(--text-muted)" }}>
+                                Servers you're no longer in ({orphaned.length})
+                            </summary>
+                            <div style={{ marginTop: 4 }}>{orphaned.map(renderRow)}</div>
+                        </details>
+                    )}
                 </div>
             )}
 
@@ -278,7 +295,7 @@ export default definePlugin({
                             ? "ChannelConnectSound: rate limited — slow down your joins"
                             : e?.body?.code === 50168
                                 ? "ChannelConnectSound: not connected to channel yet — try increasing the delay"
-                                : `ChannelConnectSound: "${entry.soundName}" no longer exists in ${entry.guildName} — update your settings`;
+                                : `ChannelConnectSound: "${entry.soundName}" no longer exists in ${GuildStore.getGuild(entry.guildId)?.name ?? entry.guildName} — update your settings`;
                         showToast(msg, "failure");
                     }
                 }
