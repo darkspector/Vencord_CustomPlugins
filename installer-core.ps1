@@ -14,6 +14,8 @@ $ErrorActionPreference = "Stop"
 $dataDir = Join-Path $env:LOCALAPPDATA "VencordCustomPlugins"
 # Install folder used when this repo only had ChannelConnectSound
 $oldDataDir = Join-Path $env:LOCALAPPDATA "VencordConnectSound"
+# Repo name before it was renamed; .bat files downloaded back then still point at it
+$oldRepo = "darkspector/Vencord_ChannelConnectSound"
 $distZip = Join-Path $dataDir "dist.zip"
 $installer = Join-Path $dataDir "VencordInstallerCli.exe"
 $discordDir = Join-Path $env:LOCALAPPDATA "Discord"
@@ -53,6 +55,35 @@ function Start-DiscordAndWait {
     } until ($ready -or (Get-Date) -gt $deadline)
 }
 
+# Replace the vencord_install.bat that launched us if it still downloads from the old repo.
+# The .bat is in the parent cmd.exe's command line, e.g. cmd.exe /c ""C:\Users\me\Downloads\vencord_install.bat" "
+# cmd reads a running .bat as it goes, so the swap waits until that cmd.exe exits.
+function Update-Launcher {
+    try {
+        $self = Get-CimInstance Win32_Process -Filter "ProcessId=$PID"
+        $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($self.ParentProcessId)"
+    } catch { return }
+    if ($parent.Name -ne "cmd.exe" -or $parent.CommandLine -notmatch '/[ck]\s+"*([^"]+?\.bat)') { return }
+    $bat = $Matches[1]
+    if (-not (Test-Path -LiteralPath $bat)) { return }
+    if (-not (Select-String -LiteralPath $bat -SimpleMatch $oldRepo -Quiet)) { return }
+
+    Write-Host "Updating $bat to download from $Repo..."
+    $newBat = Join-Path $dataDir "vencord_install.bat.new"
+    try {
+        Invoke-WebRequest "https://github.com/$Repo/releases/latest/download/vencord_install.bat" -OutFile $newBat
+    } catch {
+        Write-Host "Couldn't download the new installer file, keeping the old one." -ForegroundColor Yellow
+        return
+    }
+    $src = $newBat.Replace("'", "''")
+    $dst = $bat.Replace("'", "''")
+    Start-Process powershell -WindowStyle Hidden -ArgumentList @(
+        "-NoProfile", "-Command",
+        "Wait-Process -Id $($parent.ProcessId) -ErrorAction SilentlyContinue; Move-Item -Force -LiteralPath '$src' -Destination '$dst'"
+    )
+}
+
 Write-Host "Vencord Custom Plugins installer" -ForegroundColor Cyan
 
 if (-not (Test-Path $update)) {
@@ -73,6 +104,8 @@ if ((Test-Path $oldSettings) -and -not (Test-Path $newSettings)) {
 }
 
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+
+Update-Launcher
 
 # 1. Download the pre-built dist
 Write-Host "[1/4] Downloading build..."
