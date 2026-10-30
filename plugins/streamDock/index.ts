@@ -23,6 +23,10 @@ const A_APP = "data-vc-streamdock-app";
 const A_BAR = "data-vc-streamdock-bar";
 // Toolbar shown over the full call view, with a button to dock the stream again
 const A_CALL_BAR = "data-vc-streamdock-callbar";
+// Set on a toolbar when it's been placed in Discord's own control row instead of floating
+const A_INLINE = "data-vc-streamdock-inline";
+// Discord's Full Screen / Pop Out buttons, matched by their (English) labels; our buttons go next to them
+const NATIVE_CONTROL = /full ?screen|pop ?out/i;
 const A_HANDLE = "data-vc-streamdock-handle";
 // Elements between the popout window and its <video>, stretched to fill the docked window
 const A_FILL = "data-vc-streamdock-fill";
@@ -37,11 +41,11 @@ const GUILD_STAGE_VOICE = 13;
 const WATCH_WINDOW_MS = 2000;
 
 const ICONS = {
-    undock: "M15 3h6v6h-2V6.41l-7.29 7.3-1.42-1.42L17.59 5H15V3ZM5 5h6v2H5v12h12v-6h2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z",
+    undock: "M19 11h-8v6h8v-6Zm2-8H3a2 2 0 0 0-2 2v14c0 1.1.9 1.98 2 1.98h18c1.1 0 2-.88 2-1.98V5a2 2 0 0 0-2-2Zm0 16.01H3V4.98h18v14.03Z",
     dock: "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 2v6h14V5H5Z",
     down: "M11 4h2v12.17l5.59-5.58L20 12l-8 8-8-8 1.41-1.41L11 16.17V4Z",
     up: "M13 20h-2V7.83l-5.59 5.58L4 12l8-8 8 8-1.41 1.41L13 7.83V20Z",
-    fullView: "M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM4 14h2v4h4v2H4v-6Zm14 4v-4h2v6h-6v-2h4Z"
+    fullView: "M12 5.83 15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83Zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17Z"
 };
 
 const settings = definePluginSettings({
@@ -106,7 +110,7 @@ const css = `
 [${A_APP}="top"] {
     margin-top: var(--vc-sd-height) !important;
 }
-[${A_BAR}] {
+[${A_BAR}]:not([${A_INLINE}]) {
     position: absolute;
     top: 8px;
     right: 8px;
@@ -177,7 +181,22 @@ ${PIP_WINDOW}:hover [${A_HANDLE}]::after {
 ${PIP_WINDOW}:hover [${A_BAR}], [${A_BAR}]:focus-within {
     opacity: 1;
 }
-[${A_CALL_BAR}] {
+[${A_INLINE}] {
+    display: contents;
+}
+[${A_INLINE}] button span {
+    display: none;
+}
+/* Zero specificity, so the copied Discord classes win; this only removes the browser's default button look */
+:where([${A_INLINE}] button) {
+    appearance: none;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+[${A_CALL_BAR}]:not([${A_INLINE}]) {
     position: fixed;
     z-index: 10;
     display: flex;
@@ -187,7 +206,7 @@ ${PIP_WINDOW}:hover [${A_BAR}], [${A_BAR}]:focus-within {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     transform: translateX(-50%);
 }
-:is([${A_BAR}], [${A_CALL_BAR}]) button {
+:is([${A_BAR}], [${A_CALL_BAR}]):not([${A_INLINE}]) button {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -202,21 +221,23 @@ ${PIP_WINDOW}:hover [${A_BAR}], [${A_BAR}]:focus-within {
     cursor: pointer;
     transition: background-color 0.1s, color 0.1s;
 }
-:is([${A_BAR}], [${A_CALL_BAR}]) button:hover {
+:is([${A_BAR}], [${A_CALL_BAR}]):not([${A_INLINE}]) button:hover {
     color: #fff;
     background: #5865f2;
 }
-:is([${A_BAR}], [${A_CALL_BAR}]) button:active {
+:is([${A_BAR}], [${A_CALL_BAR}]):not([${A_INLINE}]) button:active {
     background: #4752c4;
 }
-:is([${A_BAR}], [${A_CALL_BAR}]) button:focus-visible {
+:is([${A_BAR}], [${A_CALL_BAR}]):not([${A_INLINE}]) button:focus-visible {
     outline: 2px solid #00a8fc;
     outline-offset: 1px;
 }
-:is([${A_BAR}], [${A_CALL_BAR}]) svg {
+:is([${A_BAR}], [${A_CALL_BAR}]):not([${A_INLINE}]) svg {
     width: 16px;
     height: 16px;
     flex-shrink: 0;
+}
+:is([${A_BAR}], [${A_CALL_BAR}]) svg path {
     fill: currentColor;
 }
 `;
@@ -293,6 +314,43 @@ function setButton(btn: HTMLButtonElement, icon: keyof typeof ICONS, label: stri
     btn.querySelector("span")!.textContent = label;
 }
 
+function findNativeControl(scope: Element, ours: Element) {
+    for (const el of scope.querySelectorAll("button[aria-label], [role=button][aria-label]")) {
+        if (!ours.contains(el) && NATIVE_CONTROL.test(el.getAttribute("aria-label")!)) return el;
+    }
+    return null;
+}
+
+// Put the toolbar's buttons in Discord's own control row, styled like its buttons, when we can find it.
+// Otherwise the toolbar floats in floatParent.
+function placeBar(bar: HTMLElement, scope: Element | null, floatParent: Element) {
+    const control = scope && findNativeControl(scope, bar);
+    const buttons = bar.children as HTMLCollectionOf<HTMLButtonElement>;
+
+    if (!control) {
+        if (bar.parentElement !== floatParent) floatParent.appendChild(bar);
+        bar.removeAttribute(A_INLINE);
+        for (const btn of buttons) btn.className = "";
+        return false;
+    }
+
+    // Discord wraps each control in a tooltip wrapper; go next to the wrapper, not inside it
+    const anchor = control.parentElement?.childElementCount === 1 ? control.parentElement : control;
+    if (bar.nextElementSibling !== anchor) anchor.before(bar);
+    if (!bar.hasAttribute(A_INLINE)) bar.setAttribute(A_INLINE, "");
+
+    const nativeSvg = control.querySelector("svg");
+    for (const btn of buttons) {
+        if (btn.className !== control.className) btn.className = control.className;
+        const svg = btn.querySelector("svg");
+        if (svg && nativeSvg) {
+            svg.setAttribute("width", nativeSvg.getAttribute("width") ?? "24");
+            svg.setAttribute("height", nativeSvg.getAttribute("height") ?? "24");
+        }
+    }
+    return true;
+}
+
 function ensureButtons(win: Element, docked: boolean) {
     let bar = win.querySelector<HTMLDivElement>(`[${A_BAR}]`);
     if (!bar) {
@@ -305,11 +363,12 @@ function ensureButtons(win: Element, docked: boolean) {
         );
         win.appendChild(bar);
     }
+    placeBar(bar, win, win);
     const [posBtn, fullBtn, dockBtn] = bar.children as HTMLCollectionOf<HTMLButtonElement>;
     setButton(fullBtn, "fullView", "Full view");
     if (settings.store.position === "top") setButton(posBtn, "down", "Move to bottom");
     else setButton(posBtn, "up", "Move to top");
-    if (docked) setButton(dockBtn, "undock", "Undock");
+    if (docked) setButton(dockBtn, "undock", "Undock to mini player");
     else setButton(dockBtn, "dock", "Dock");
     posBtn.style.display = docked ? "" : "none";
 }
@@ -406,7 +465,8 @@ function dockFromFullView() {
 function updateCallBar(app: Element | null) {
     const selected = SelectedChannelStore.getChannelId();
     const inFullView = !!lastTextChannelId && isVoiceChannel(selected) && getWatchedStream()?.channelId === selected;
-    const host = inFullView ? document.querySelector(CALL_VIEW) ?? app : null;
+    const callView = inFullView ? document.querySelector(CALL_VIEW) : null;
+    const host = inFullView ? callView ?? app : null;
 
     let bar = document.querySelector<HTMLDivElement>(`[${A_CALL_BAR}]`);
     if (!host) {
@@ -421,6 +481,7 @@ function updateCallBar(app: Element | null) {
         bar.append(btn);
         document.body.appendChild(bar);
     }
+    if (placeBar(bar, callView, document.body)) return;
     const rect = host.getBoundingClientRect();
     bar.style.top = `${Math.round(rect.top + 12)}px`;
     bar.style.left = `${Math.round(rect.left + rect.width / 2)}px`;

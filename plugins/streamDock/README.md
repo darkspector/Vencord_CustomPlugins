@@ -14,11 +14,11 @@ The stream fills the window's width at its own shape (usually 16:9), so there's 
 
 To change the size, drag the edge of the stream that faces the rest of Discord (a handle appears when you hover). You can make it smaller, or bigger up to half the window or the stream's full height, whichever is shorter, so you never get black bars above and below it. The size is remembered. Double-click the handle to go back to fitting the stream's shape.
 
-Hover over the stream to show its toolbar in the top-right corner:
+Hover over the stream to show its buttons. They sit next to Discord's own Full Screen / Pop Out buttons when the stream has them, otherwise in a toolbar in the top-right corner:
 
 - **Move to bottom** / **Move to top** moves the stream to the other end of the window. Discord moves out of the way either way, so it never covers anything.
-- **Full view** switches to Discord's full-screen call view of the stream. While you're there, a **Dock stream** button at the top of the call view takes you back to your text channel with the stream docked.
-- **Undock** / **Dock** switches between the docked view and Discord's normal floating popout.
+- **Full view** (↕ arrows) switches to Discord's full-screen call view of the stream. While you're there, a **Dock stream** button next to Discord's Full Screen and Pop Out buttons takes you back to your text channel with the stream docked.
+- **Undock to mini player** / **Dock** switches between the docked view and Discord's normal floating popout.
 
 ## Settings
 
