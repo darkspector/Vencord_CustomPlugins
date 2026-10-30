@@ -16,7 +16,7 @@ The installer downloads a pre-built Vencord with all the plugins included, resta
 
 Run it again any time to pick up new plugin builds, or after a Discord update removes Vencord.
 
-After installing, enable the plugins you want in **User Settings → Vencord → Plugins**.
+After installing, enable the plugins you want in **User Settings → Vencord → Plugins**. They have a ★ in front of their names, so they sort to the top of the list.
 
 ## Adding a plugin
 

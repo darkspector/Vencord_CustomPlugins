@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { definePluginSettings } from "@api/Settings";
+import { definePluginSettings, migratePluginSettings } from "@api/Settings";
 import definePlugin, { makeRange, OptionType } from "@utils/types";
 
 // Discord's class names are hashed (e.g. "pictureInPictureWindow_a1b2c3"), so match on the prefix.
@@ -225,8 +225,10 @@ function update() {
     }
 }
 
+// The ★ prefix sorts our plugins to the top of the Vencord plugin list
+migratePluginSettings("★ StreamDock", "StreamDock");
 export default definePlugin({
-    name: "StreamDock",
+    name: "★ StreamDock",
     description: "Docks the stream popout into the top part of the chat so you can watch and text at the same time",
     authors: [{ name: "chris", id: 0n }],
     settings,

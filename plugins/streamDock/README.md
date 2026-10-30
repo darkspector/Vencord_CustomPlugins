@@ -18,7 +18,7 @@ Hover over the stream to show its buttons:
 
 ## Settings
 
-Open **User Settings → Vencord → Plugins**, search for **StreamDock**, and click the cog icon.
+Open **User Settings → Vencord → Plugins**, find **★ StreamDock** at the top of the list, and click the cog icon.
 
 - **Auto dock**: dock the stream automatically when the popout appears. On by default.
 - **Position**: top or bottom of the chat. The Move button changes this too, and it's remembered.

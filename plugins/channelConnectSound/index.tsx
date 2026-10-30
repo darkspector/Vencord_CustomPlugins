@@ -1,4 +1,4 @@
-import { definePluginSettings } from "@api/Settings";
+import { definePluginSettings, migratePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
 import { Heading } from "@components/Heading";
 import { Paragraph } from "@components/Paragraph";
@@ -244,8 +244,10 @@ const settings = definePluginSettings({
     },
 });
 
+// The ★ prefix sorts our plugins to the top of the Vencord plugin list
+migratePluginSettings("★ ChannelConnectSound", "ChannelConnectSound");
 export default definePlugin({
-    name: "ChannelConnectSound",
+    name: "★ ChannelConnectSound",
     description: "Automatically plays a server soundboard sound when you join a voice channel — everyone in the channel hears it",
     // Set id to your Discord user ID (as a BigInt, e.g. 123456789012345678n) for your avatar to show
     authors: [{ name: "Chris", id: 0n }],

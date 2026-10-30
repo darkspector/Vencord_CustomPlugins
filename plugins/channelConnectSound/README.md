@@ -9,7 +9,7 @@ Install it with the installer in the [main README](../../README.md).
 ## Set up your connect sounds
 
 1. In Discord, open **User Settings → Vencord → Plugins**.
-2. Search for **ChannelConnectSound**, enable it, and click the cog icon to open its settings.
+2. Find **★ ChannelConnectSound** at the top of the list, enable it, and click the cog icon to open its settings.
 3. Under **Add / Replace**, select a server.
 4. Under **Sound**, select one of that server's soundboard sounds. Use **▶ Preview** to hear it first.
 5. Click **Add**.
