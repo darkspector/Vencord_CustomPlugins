@@ -10,7 +10,9 @@ Install it with the installer in the [main README](../../README.md).
 
 Click **Watch** on someone's stream. Instead of opening the full-screen call view, Discord stays on the text channel you were in and the stream docks right away. Switching channels keeps it docked.
 
-The stream fills the window's width at its own shape (usually 16:9), so there's no wasted space above or below it. On a narrow or short window it's capped at a maximum height and gets black bars at the sides.
+The stream fills the window's width at its own shape (usually 16:9), so there's no wasted space above or below it. It never takes more than half the window height; past that it gets black bars at the sides.
+
+To change the size, drag the edge of the stream that faces the rest of Discord (a handle appears when you hover). The size is remembered, up to half the window. Double-click the handle to go back to fitting the stream's shape.
 
 Hover over the stream to show its toolbar in the top-right corner:
 
@@ -24,4 +26,3 @@ Open **User Settings → Vencord → Plugins**, find **★ StreamDock** at the t
 - **Auto dock**: dock the stream automatically when the popout appears. On by default.
 - **Stay in chat**: stay in your text channel when you start watching a stream, instead of opening the full call view. On by default.
 - **Position**: top or bottom of the window. The Move button changes this too, and it's remembered.
-- **Max height**: the most of the window height the stream can take, from 30% to 90%. Default is 70%.

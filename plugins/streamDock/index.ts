@@ -5,7 +5,7 @@
  */
 
 import { definePluginSettings, migratePluginSettings } from "@api/Settings";
-import definePlugin, { makeRange, OptionType } from "@utils/types";
+import definePlugin, { OptionType } from "@utils/types";
 import { ChannelRouter, ChannelStore, SelectedChannelStore, UserStore } from "@webpack/common";
 
 // Discord's class names are hashed (e.g. "pictureInPictureWindow_a1b2c3"), so match on the prefix.
@@ -19,6 +19,11 @@ const A_WINDOW = "data-vc-streamdock-window";
 const A_ANCESTOR = "data-vc-streamdock-ancestor";
 const A_APP = "data-vc-streamdock-app";
 const A_BAR = "data-vc-streamdock-bar";
+const A_HANDLE = "data-vc-streamdock-handle";
+
+// The stream never takes more than this much of the window height
+const MAX_FRACTION = 0.5;
+const MIN_HEIGHT = 120;
 
 const GUILD_VOICE = 2;
 const GUILD_STAGE_VOICE = 13;
@@ -51,16 +56,11 @@ const settings = definePluginSettings({
             { label: "Bottom", value: "bottom" }
         ],
         onChange: () => scheduleUpdate()
-    },
-    maxHeight: {
-        type: OptionType.SLIDER,
-        description: "The stream fills the window width at its own aspect ratio, up to this much of the window height (%)",
-        markers: makeRange(30, 90, 10),
-        default: 70,
-        stickToMarkers: false,
-        onChange: () => scheduleUpdate()
     }
-});
+}).withPrivateSettings<{
+    // Height set with the drag handle, as % of the window height. Unset = fit the stream's aspect ratio.
+    height?: number;
+}>();
 
 const css = `
 [${A_ANCESTOR}] {
@@ -112,6 +112,60 @@ const css = `
     opacity: 0;
     transition: opacity 0.15s;
 }
+[${A_HANDLE}] {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 11;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: ns-resize;
+}
+[${A_HANDLE}="bottom"] {
+    bottom: 0;
+}
+[${A_HANDLE}="top"] {
+    top: 0;
+}
+[${A_HANDLE}]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #5865f2;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+[${A_HANDLE}="bottom"]::before {
+    bottom: 0;
+}
+[${A_HANDLE}="top"]::before {
+    top: 0;
+}
+[${A_HANDLE}]::after {
+    content: "";
+    width: 48px;
+    height: 4px;
+    border-radius: 2px;
+    background: #dbdee1;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    transition: opacity 0.15s, background-color 0.1s, width 0.1s;
+}
+${PIP_WINDOW}:hover [${A_HANDLE}]::after {
+    opacity: 0.7;
+}
+[${A_HANDLE}]:hover::before, [${A_HANDLE}][data-dragging]::before {
+    opacity: 1;
+}
+[${A_HANDLE}]:hover::after, [${A_HANDLE}][data-dragging]::after {
+    opacity: 1;
+    width: 64px;
+    background: #5865f2;
+}
 ${PIP_WINDOW}:hover [${A_BAR}], [${A_BAR}]:focus-within {
     opacity: 1;
 }
@@ -157,6 +211,11 @@ let observedVideo: HTMLVideoElement | null = null;
 let rafId = 0;
 // Height we've currently taken from the app layers, to work out their original rect while they're shrunk
 let appliedHeight = 0;
+// The app layers' rect without the stream, from the last update; the drag handle measures against it
+let fullTop = 0;
+let fullHeight = 0;
+// Height (% of window) while the handle is being dragged; only saved to settings when the drag ends
+let dragHeight: number | null = null;
 // null = follow autoDock; otherwise the user's explicit choice for the current popout
 let userDocked: boolean | null = null;
 let lastWindow: Element | null = null;
@@ -231,6 +290,58 @@ function ensureButtons(win: Element, docked: boolean) {
     posBtn.style.display = docked ? "" : "none";
 }
 
+function ensureHandle(win: Element, docked: boolean) {
+    let handle = win.querySelector<HTMLDivElement>(`[${A_HANDLE}]`);
+    if (!handle) {
+        handle = document.createElement("div");
+        handle.title = "Drag to resize, double-click to fit the stream";
+        // Keep the popout from dragging itself or jumping to the call
+        for (const ev of ["mousedown", "mouseup", "click"])
+            handle.addEventListener(ev, e => e.stopPropagation());
+
+        handle.addEventListener("pointerdown", e => {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            e.preventDefault();
+            handle!.setPointerCapture(e.pointerId);
+            handle!.setAttribute("data-dragging", "");
+            document.body.style.cursor = "ns-resize";
+        });
+        handle.addEventListener("pointermove", e => {
+            if (!handle!.hasPointerCapture(e.pointerId) || !fullHeight) return;
+            const height = settings.store.position === "top"
+                ? e.clientY - fullTop
+                : fullTop + fullHeight - e.clientY;
+            dragHeight = clampHeight(height, fullHeight) / fullHeight * 100;
+            scheduleUpdate();
+        });
+        const endDrag = (e: PointerEvent) => {
+            e.stopPropagation();
+            if (dragHeight != null) settings.store.height = dragHeight;
+            dragHeight = null;
+            handle!.removeAttribute("data-dragging");
+            document.body.style.cursor = "";
+        };
+        handle.addEventListener("pointerup", endDrag);
+        handle.addEventListener("pointercancel", endDrag);
+        handle.addEventListener("dblclick", e => {
+            e.stopPropagation();
+            settings.store.height = undefined;
+            scheduleUpdate();
+        });
+        win.appendChild(handle);
+    }
+    // The handle sits on the edge facing the rest of Discord
+    const edge = settings.store.position === "top" ? "bottom" : "top";
+    if (handle.getAttribute(A_HANDLE) !== edge) handle.setAttribute(A_HANDLE, edge);
+    handle.style.display = docked ? "" : "none";
+}
+
+function clampHeight(height: number, full: number) {
+    const max = full * MAX_FRACTION;
+    return Math.max(Math.min(MIN_HEIGHT, max), Math.min(height, max));
+}
+
 function isDocked() {
     return userDocked ?? settings.store.autoDock;
 }
@@ -273,6 +384,7 @@ function update() {
 
     const docked = isDocked() && !!app;
     ensureButtons(win, docked);
+    ensureHandle(win, docked);
 
     if (!docked) {
         clearMarks();
@@ -281,11 +393,13 @@ function update() {
 
     // Undo our own shrinking to get the rect the app layers would have without the stream
     const rect = app!.getBoundingClientRect();
-    const fullTop = rect.top - (app!.getAttribute(A_APP) === "top" ? appliedHeight : 0);
-    const fullHeight = rect.height + (app!.hasAttribute(A_APP) ? appliedHeight : 0);
+    fullTop = rect.top - (app!.getAttribute(A_APP) === "top" ? appliedHeight : 0);
+    fullHeight = rect.height + (app!.hasAttribute(A_APP) ? appliedHeight : 0);
 
     const aspect = video?.videoWidth && video.videoHeight ? video.videoHeight / video.videoWidth : 9 / 16;
-    const height = Math.round(Math.min(rect.width * aspect, fullHeight * settings.store.maxHeight / 100));
+    const savedHeight = dragHeight ?? settings.store.height;
+    const wanted = savedHeight ? fullHeight * savedHeight / 100 : rect.width * aspect;
+    const height = Math.round(clampHeight(wanted, fullHeight));
     const { position } = settings.store;
     const top = position === "top" ? fullTop : fullTop + fullHeight - height;
     const root = document.documentElement.style;
@@ -364,12 +478,14 @@ export default definePlugin({
         observer = resizeObserver = observedApp = lastWindow = null;
         userDocked = null;
         watchStartedAt = 0;
+        dragHeight = null;
         window.removeEventListener("resize", scheduleUpdate);
         if (rafId) cancelAnimationFrame(rafId);
         rafId = 0;
 
         clearMarks();
-        document.querySelectorAll(`[${A_BAR}]`).forEach(el => el.remove());
+        document.querySelectorAll(`[${A_BAR}], [${A_HANDLE}]`).forEach(el => el.remove());
+        document.body.style.cursor = "";
         for (const v of ["--vc-sd-top", "--vc-sd-left", "--vc-sd-width", "--vc-sd-height"])
             document.documentElement.style.removeProperty(v);
         style?.remove();
