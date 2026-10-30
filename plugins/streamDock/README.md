@@ -12,7 +12,7 @@ Click **Watch** on someone's stream. Instead of opening the full-screen call vie
 
 The stream fills the window's width at its own shape (usually 16:9), so there's no wasted space above or below it. It never takes more than half the window height; past that it gets black bars at the sides.
 
-To change the size, drag the edge of the stream that faces the rest of Discord (a handle appears when you hover). The size is remembered, up to half the window. Double-click the handle to go back to fitting the stream's shape.
+To change the size, drag the edge of the stream that faces the rest of Discord (a handle appears when you hover). You can make it smaller, or bigger up to half the window or the stream's full height, whichever is shorter, so you never get black bars above and below it. The size is remembered. Double-click the handle to go back to fitting the stream's shape.
 
 Hover over the stream to show its toolbar in the top-right corner:
 

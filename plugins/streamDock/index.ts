@@ -23,7 +23,7 @@ const A_HANDLE = "data-vc-streamdock-handle";
 // Elements between the popout window and its <video>, stretched to fill the docked window
 const A_FILL = "data-vc-streamdock-fill";
 
-// The stream never takes more than this much of the window height
+// The stream never takes more than this much of the window height, or more than its own height at full width
 const MAX_FRACTION = 0.5;
 const MIN_HEIGHT = 120;
 
@@ -216,6 +216,8 @@ let appliedHeight = 0;
 // The app layers' rect without the stream, from the last update; the drag handle measures against it
 let fullTop = 0;
 let fullHeight = 0;
+// The stream's height at full window width and its own aspect ratio
+let streamHeight = 0;
 // Height (% of window) while the handle is being dragged; only saved to settings when the drag ends
 let dragHeight: number | null = null;
 // null = follow autoDock; otherwise the user's explicit choice for the current popout
@@ -314,7 +316,7 @@ function ensureHandle(win: Element, docked: boolean) {
             const height = settings.store.position === "top"
                 ? e.clientY - fullTop
                 : fullTop + fullHeight - e.clientY;
-            dragHeight = clampHeight(height, fullHeight) / fullHeight * 100;
+            dragHeight = clampHeight(height) / fullHeight * 100;
             scheduleUpdate();
         });
         const endDrag = (e: PointerEvent) => {
@@ -339,8 +341,8 @@ function ensureHandle(win: Element, docked: boolean) {
     handle.style.display = docked ? "" : "none";
 }
 
-function clampHeight(height: number, full: number) {
-    const max = full * MAX_FRACTION;
+function clampHeight(height: number) {
+    const max = Math.min(fullHeight * MAX_FRACTION, streamHeight);
     return Math.max(Math.min(MIN_HEIGHT, max), Math.min(height, max));
 }
 
@@ -400,8 +402,9 @@ function update() {
 
     const aspect = video?.videoWidth && video.videoHeight ? video.videoHeight / video.videoWidth : 9 / 16;
     const savedHeight = dragHeight ?? settings.store.height;
-    const wanted = savedHeight ? fullHeight * savedHeight / 100 : rect.width * aspect;
-    const height = Math.round(clampHeight(wanted, fullHeight));
+    streamHeight = rect.width * aspect;
+    const wanted = savedHeight ? fullHeight * savedHeight / 100 : streamHeight;
+    const height = Math.round(clampHeight(wanted));
     const { position } = settings.store;
     const top = position === "top" ? fullTop : fullTop + fullHeight - height;
     const root = document.documentElement.style;
