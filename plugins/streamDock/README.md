@@ -17,6 +17,7 @@ To change the size, drag the edge of the stream that faces the rest of Discord (
 Hover over the stream to show its toolbar in the top-right corner:
 
 - **Move to bottom** / **Move to top** moves the stream to the other end of the window. Discord moves out of the way either way, so it never covers anything.
+- **Full view** switches to Discord's full-screen call view of the stream. While you're there, a **Dock stream** button at the top of the call view takes you back to your text channel with the stream docked.
 - **Undock** / **Dock** switches between the docked view and Discord's normal floating popout.
 
 ## Settings
@@ -24,5 +25,5 @@ Hover over the stream to show its toolbar in the top-right corner:
 Open **User Settings → Vencord → Plugins**, find **★ StreamDock** at the top of the list, and click the cog icon.
 
 - **Auto dock**: dock the stream automatically when the popout appears. On by default.
-- **Stay in chat**: stay in your text channel when you start watching a stream, instead of opening the full call view. On by default.
+- **Start stream docked**: stay in your text channel when you start watching a stream, instead of opening the full call view. On by default.
 - **Position**: top or bottom of the window. The Move button changes this too, and it's remembered.

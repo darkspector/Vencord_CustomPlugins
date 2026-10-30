@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { definePluginSettings, migratePluginSettings } from "@api/Settings";
+import { definePluginSettings, migratePluginSetting, migratePluginSettings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
-import { ChannelRouter, ChannelStore, SelectedChannelStore, UserStore } from "@webpack/common";
+import { ApplicationStreamingStore, ChannelRouter, ChannelStore, SelectedChannelStore, UserStore } from "@webpack/common";
 
 // Discord's class names are hashed (e.g. "pictureInPictureWindow_a1b2c3"), so match on the prefix.
 const PIP_WINDOW = '[class*="pictureInPictureWindow"]';
@@ -14,11 +14,15 @@ const PIP_ROOT = '[class*="pictureInPicture_"]';
 // Discord's stack of full-window layers (the main UI, settings, ...). Popouts, menus and tooltips live
 // in separate layer containers, so shrinking this keeps their positions lined up with the cursor.
 const APP_LAYERS = '[class*="layers_"]';
+// The voice channel's call view, where Discord shows the stream full size
+const CALL_VIEW = '[class*="callContainer"]';
 
 const A_WINDOW = "data-vc-streamdock-window";
 const A_ANCESTOR = "data-vc-streamdock-ancestor";
 const A_APP = "data-vc-streamdock-app";
 const A_BAR = "data-vc-streamdock-bar";
+// Toolbar shown over the full call view, with a button to dock the stream again
+const A_CALL_BAR = "data-vc-streamdock-callbar";
 const A_HANDLE = "data-vc-streamdock-handle";
 // Elements between the popout window and its <video>, stretched to fill the docked window
 const A_FILL = "data-vc-streamdock-fill";
@@ -36,7 +40,8 @@ const ICONS = {
     undock: "M15 3h6v6h-2V6.41l-7.29 7.3-1.42-1.42L17.59 5H15V3ZM5 5h6v2H5v12h12v-6h2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z",
     dock: "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 2v6h14V5H5Z",
     down: "M11 4h2v12.17l5.59-5.58L20 12l-8 8-8-8 1.41-1.41L11 16.17V4Z",
-    up: "M13 20h-2V7.83l-5.59 5.58L4 12l8-8 8 8-1.41 1.41L13 7.83V20Z"
+    up: "M13 20h-2V7.83l-5.59 5.58L4 12l8-8 8 8-1.41 1.41L13 7.83V20Z",
+    fullView: "M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM4 14h2v4h4v2H4v-6Zm14 4v-4h2v6h-6v-2h4Z"
 };
 
 const settings = definePluginSettings({
@@ -45,8 +50,9 @@ const settings = definePluginSettings({
         description: "Automatically dock the stream popout when it appears",
         default: true
     },
-    stayInChat: {
+    startDocked: {
         type: OptionType.BOOLEAN,
+        displayName: "Start stream docked",
         description: "When you start watching a stream, stay in your text channel with the stream docked instead of opening the full call view",
         default: true
     },
@@ -171,7 +177,17 @@ ${PIP_WINDOW}:hover [${A_HANDLE}]::after {
 ${PIP_WINDOW}:hover [${A_BAR}], [${A_BAR}]:focus-within {
     opacity: 1;
 }
-[${A_BAR}] button {
+[${A_CALL_BAR}] {
+    position: fixed;
+    z-index: 10;
+    display: flex;
+    padding: 4px;
+    border-radius: 8px;
+    background: rgba(17, 18, 20, 0.9);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    transform: translateX(-50%);
+}
+:is([${A_BAR}], [${A_CALL_BAR}]) button {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -186,18 +202,18 @@ ${PIP_WINDOW}:hover [${A_BAR}], [${A_BAR}]:focus-within {
     cursor: pointer;
     transition: background-color 0.1s, color 0.1s;
 }
-[${A_BAR}] button:hover {
+:is([${A_BAR}], [${A_CALL_BAR}]) button:hover {
     color: #fff;
     background: #5865f2;
 }
-[${A_BAR}] button:active {
+:is([${A_BAR}], [${A_CALL_BAR}]) button:active {
     background: #4752c4;
 }
-[${A_BAR}] button:focus-visible {
+:is([${A_BAR}], [${A_CALL_BAR}]) button:focus-visible {
     outline: 2px solid #00a8fc;
     outline-offset: 1px;
 }
-[${A_BAR}] svg {
+:is([${A_BAR}], [${A_CALL_BAR}]) svg {
     width: 16px;
     height: 16px;
     flex-shrink: 0;
@@ -226,6 +242,8 @@ let lastWindow: Element | null = null;
 // Last non-voice channel the user was looking at, to return to when they start watching a stream
 let lastTextChannelId: string | null = null;
 let watchStartedAt = 0;
+// Set by the Dock button in the call view so the next popout docks even if auto dock is off
+let forceDock = false;
 
 function scheduleUpdate() {
     if (rafId) return;
@@ -282,11 +300,13 @@ function ensureButtons(win: Element, docked: boolean) {
         bar.setAttribute(A_BAR, "");
         bar.append(
             makeButton(() => settings.store.position = settings.store.position === "top" ? "bottom" : "top"),
+            makeButton(openFullView),
             makeButton(() => userDocked = !isDocked())
         );
         win.appendChild(bar);
     }
-    const [posBtn, dockBtn] = bar.children as HTMLCollectionOf<HTMLButtonElement>;
+    const [posBtn, fullBtn, dockBtn] = bar.children as HTMLCollectionOf<HTMLButtonElement>;
+    setButton(fullBtn, "fullView", "Full view");
     if (settings.store.position === "top") setButton(posBtn, "down", "Move to bottom");
     else setButton(posBtn, "up", "Move to top");
     if (docked) setButton(dockBtn, "undock", "Undock");
@@ -365,6 +385,47 @@ function observeVideo(video: HTMLVideoElement | null) {
     video?.addEventListener("resize", scheduleUpdate);
 }
 
+// The stream we're watching (not our own Go Live), if any
+function getWatchedStream() {
+    const myId = UserStore.getCurrentUser()?.id;
+    return ApplicationStreamingStore.getAllActiveStreams().find(s => s.ownerId !== myId) ?? null;
+}
+
+function openFullView() {
+    const channelId = getWatchedStream()?.channelId ?? SelectedChannelStore.getVoiceChannelId();
+    if (channelId) ChannelRouter.transitionToChannel(channelId);
+}
+
+function dockFromFullView() {
+    if (!lastTextChannelId) return;
+    forceDock = true;
+    ChannelRouter.transitionToChannel(lastTextChannelId);
+}
+
+// Show a Dock button over the call view while it's showing the stream we're watching
+function updateCallBar(app: Element | null) {
+    const selected = SelectedChannelStore.getChannelId();
+    const inFullView = !!lastTextChannelId && isVoiceChannel(selected) && getWatchedStream()?.channelId === selected;
+    const host = inFullView ? document.querySelector(CALL_VIEW) ?? app : null;
+
+    let bar = document.querySelector<HTMLDivElement>(`[${A_CALL_BAR}]`);
+    if (!host) {
+        bar?.remove();
+        return;
+    }
+    if (!bar) {
+        bar = document.createElement("div");
+        bar.setAttribute(A_CALL_BAR, "");
+        const btn = makeButton(dockFromFullView);
+        setButton(btn, "dock", "Dock stream");
+        bar.append(btn);
+        document.body.appendChild(bar);
+    }
+    const rect = host.getBoundingClientRect();
+    bar.style.top = `${Math.round(rect.top + 12)}px`;
+    bar.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
+}
+
 function update() {
     const win = document.querySelector(PIP_WINDOW);
     const app = document.querySelector(APP_LAYERS);
@@ -373,9 +434,14 @@ function update() {
         // New popout (or popout closed): forget the manual toggle
         lastWindow = win;
         userDocked = null;
+        if (win && forceDock) {
+            userDocked = true;
+            forceDock = false;
+        }
     }
 
     observeApp(app);
+    updateCallBar(app);
 
     if (!win) {
         observeVideo(null);
@@ -432,6 +498,7 @@ function update() {
 
 // The ★ prefix sorts our plugins to the top of the Vencord plugin list
 migratePluginSettings("★ StreamDock", "StreamDock");
+migratePluginSetting("★ StreamDock", "stayInChat", "startDocked");
 export default definePlugin({
     name: "★ StreamDock",
     description: "Docks the stream across the top or bottom of the window and moves Discord out of its way, so you can watch and text at the same time",
@@ -451,7 +518,7 @@ export default definePlugin({
         },
 
         STREAM_WATCH({ streamKey }: { streamKey: string; }) {
-            if (!settings.store.stayInChat) return;
+            if (!settings.store.startDocked) return;
             // streamKey is "guild:<guildId>:<channelId>:<userId>" or "call:<channelId>:<userId>"; skip our own Go Live
             if (streamKey?.split(":").pop() === UserStore.getCurrentUser()?.id) return;
             watchStartedAt = Date.now();
@@ -486,12 +553,13 @@ export default definePlugin({
         userDocked = null;
         watchStartedAt = 0;
         dragHeight = null;
+        forceDock = false;
         window.removeEventListener("resize", scheduleUpdate);
         if (rafId) cancelAnimationFrame(rafId);
         rafId = 0;
 
         clearMarks();
-        document.querySelectorAll(`[${A_BAR}], [${A_HANDLE}]`).forEach(el => el.remove());
+        document.querySelectorAll(`[${A_BAR}], [${A_HANDLE}], [${A_CALL_BAR}]`).forEach(el => el.remove());
         document.body.style.cursor = "";
         for (const v of ["--vc-sd-top", "--vc-sd-left", "--vc-sd-width", "--vc-sd-height"])
             document.documentElement.style.removeProperty(v);
