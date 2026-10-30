@@ -1,4 +1,4 @@
-# ChannelConnectSound
+# VoiceConnectSound
 
 A [Vencord](https://vencord.dev) plugin that plays a server soundboard sound when you join a voice channel. Everyone in the channel hears it.
 
@@ -9,14 +9,14 @@ Install it with the installer in the [main README](../../README.md).
 ## Set up your connect sounds
 
 1. In Discord, open **User Settings → Vencord → Plugins**.
-2. Find **★ ChannelConnectSound** at the top of the list, enable it, and click the cog icon to open its settings.
+2. Find **★ VoiceConnectSound** at the top of the list, enable it, and click the cog icon to open its settings.
 3. Under **Add / Replace**, select a server.
 4. Under **Sound**, select one of that server's soundboard sounds. Use **▶ Preview** to hear it first.
 5. Click **Add**.
 
 Repeat for each server you want a sound in. Picking a server that already has a sound changes the button to **Replace**.
 
-![ChannelConnectSound settings](docs/settings.jpg)
+![VoiceConnectSound settings](docs/settings.jpg)
 
 - **▶** next to a server plays its sound locally.
 - **Remove** clears the sound for that server.

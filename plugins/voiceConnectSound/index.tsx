@@ -6,7 +6,7 @@ import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType } from "@utils/types";
 import { ChannelStore, GuildStore, RestAPI, SearchableSelect, showToast, useEffect, useState, UserStore, VoiceStateStore } from "@webpack/common";
 
-const logger = new Logger("ChannelConnectSound");
+const logger = new Logger("VoiceConnectSound");
 
 // Delay before playing on join — lets the RTC connection establish, since the
 // send-soundboard-sound API requires you to actually be connected.
@@ -55,7 +55,7 @@ async function previewSound(soundId: string, soundName: string, showErrorToast =
     } catch (e) {
         logger.warn("Local playback failed", e);
         if (showErrorToast) {
-            showToast(`ChannelConnectSound: could not play "${soundName}" — CDN URL may have changed`, "failure");
+            showToast(`VoiceConnectSound: could not play "${soundName}" — CDN URL may have changed`, "failure");
         }
         return false;
     }
@@ -245,9 +245,9 @@ const settings = definePluginSettings({
 });
 
 // The ★ prefix sorts our plugins to the top of the Vencord plugin list
-migratePluginSettings("★ ChannelConnectSound", "ChannelConnectSound");
+migratePluginSettings("★ VoiceConnectSound", "★ ChannelConnectSound", "ChannelConnectSound");
 export default definePlugin({
-    name: "★ ChannelConnectSound",
+    name: "★ VoiceConnectSound",
     description: "Automatically plays a server soundboard sound when you join a voice channel — everyone in the channel hears it",
     // Set id to your Discord user ID (as a BigInt, e.g. 123456789012345678n) for your avatar to show
     authors: [{ name: "Chris", id: 0n }],
@@ -296,10 +296,10 @@ export default definePlugin({
                     logger.warn("send-soundboard-sound failed", e);
                     if (!errorShown && e?.status >= 400 && e?.status < 500) {
                         const msg = e?.status === 429
-                            ? "ChannelConnectSound: rate limited — slow down your joins"
+                            ? "VoiceConnectSound: rate limited — slow down your joins"
                             : e?.body?.code === 50168
-                                ? "ChannelConnectSound: not connected to channel yet — try increasing the delay"
-                                : `ChannelConnectSound: "${entry.soundName}" no longer exists in ${GuildStore.getGuild(entry.guildId)?.name ?? entry.guildName} — update your settings`;
+                                ? "VoiceConnectSound: not connected to channel yet — try increasing the delay"
+                                : `VoiceConnectSound: "${entry.soundName}" no longer exists in ${GuildStore.getGuild(entry.guildId)?.name ?? entry.guildName} — update your settings`;
                         showToast(msg, "failure");
                     }
                 }

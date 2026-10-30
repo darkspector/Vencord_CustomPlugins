@@ -20,6 +20,8 @@ const A_ANCESTOR = "data-vc-streamdock-ancestor";
 const A_APP = "data-vc-streamdock-app";
 const A_BAR = "data-vc-streamdock-bar";
 const A_HANDLE = "data-vc-streamdock-handle";
+// Elements between the popout window and its <video>, stretched to fill the docked window
+const A_FILL = "data-vc-streamdock-fill";
 
 // The stream never takes more than this much of the window height
 const MAX_FRACTION = 0.5;
@@ -82,13 +84,13 @@ const css = `
     background: #000 !important;
     z-index: 100 !important;
 }
-[${A_WINDOW}] > div {
+[${A_FILL}] {
     width: 100% !important;
     height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
 }
 [${A_WINDOW}] video {
-    width: 100% !important;
-    height: 100% !important;
     object-fit: contain !important;
 }
 [${A_APP}] {
@@ -102,7 +104,7 @@ const css = `
     position: absolute;
     top: 8px;
     right: 8px;
-    z-index: 10;
+    z-index: 12;
     display: flex;
     gap: 2px;
     padding: 4px;
@@ -232,7 +234,7 @@ function scheduleUpdate() {
 }
 
 function clearMarks() {
-    for (const attr of [A_WINDOW, A_ANCESTOR, A_APP])
+    for (const attr of [A_WINDOW, A_ANCESTOR, A_APP, A_FILL])
         document.querySelectorAll(`[${attr}]`).forEach(el => el.removeAttribute(attr));
     appliedHeight = 0;
 }
@@ -409,6 +411,8 @@ function update() {
     root.setProperty("--vc-sd-height", `${height}px`);
 
     if (!win.hasAttribute(A_WINDOW)) win.setAttribute(A_WINDOW, "");
+    for (let el: Element | null = video; el && el !== win; el = el.parentElement)
+        if (!el.hasAttribute(A_FILL)) el.setAttribute(A_FILL, "");
     if (app!.getAttribute(A_APP) !== position) {
         document.querySelectorAll(`[${A_APP}]`).forEach(el => el.removeAttribute(A_APP));
         app!.setAttribute(A_APP, position);
