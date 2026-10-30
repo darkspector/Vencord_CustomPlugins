@@ -6,6 +6,7 @@
 
 import { definePluginSettings, migratePluginSetting, migratePluginSettings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
+import { findCssClasses } from "@webpack";
 import { ApplicationStreamingStore, ChannelRouter, ChannelStore, SelectedChannelStore, UserStore } from "@webpack/common";
 
 // Discord's class names are hashed (e.g. "pictureInPictureWindow_a1b2c3"), so match on the prefix.
@@ -25,6 +26,7 @@ const A_BAR = "data-vc-streamdock-bar";
 const A_CALL_BAR = "data-vc-streamdock-callbar";
 // Set on a toolbar when it's been placed in Discord's own control row instead of floating
 const A_INLINE = "data-vc-streamdock-inline";
+const A_TOOLTIP = "data-vc-streamdock-tooltip";
 // Discord's Full Screen / Pop Out buttons, matched by their (English) labels; our buttons go next to them
 const NATIVE_CONTROL = /full ?screen|pop ?out/i;
 const A_HANDLE = "data-vc-streamdock-handle";
@@ -187,6 +189,48 @@ ${PIP_WINDOW}:hover [${A_BAR}], [${A_BAR}]:focus-within {
 [${A_INLINE}] button span {
     display: none;
 }
+[${A_TOOLTIP}] {
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    transform: translate(-50%, -100%);
+    animation: vc-streamdock-tip-in 0.1s ease-out;
+}
+[${A_TOOLTIP}][data-below] {
+    transform: translate(-50%, 0);
+}
+@keyframes vc-streamdock-tip-in {
+    from { opacity: 0; scale: 0.95; }
+}
+/* Used only when Discord's own tooltip classes can't be found */
+[${A_TOOLTIP}][data-fallback] > div {
+    position: relative;
+    max-width: 190px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 16px;
+    color: var(--text-normal, #dbdee1);
+    background: var(--background-floating, #111214);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
+    word-wrap: break-word;
+}
+[${A_TOOLTIP}][data-fallback] > div::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    margin-left: -5px;
+    border: 5px solid transparent;
+    border-top-color: var(--background-floating, #111214);
+}
+[${A_TOOLTIP}][data-fallback][data-below] > div::after {
+    top: auto;
+    bottom: 100%;
+    border-top-color: transparent;
+    border-bottom-color: var(--background-floating, #111214);
+}
 /* Zero specificity, so the copied Discord classes win; this only removes the browser's default button look */
 :where([${A_INLINE}] button) {
     appearance: none;
@@ -291,6 +335,69 @@ function returnToChat() {
         ChannelRouter.transitionToChannel(lastTextChannelId);
 }
 
+// Discord's own tooltip classes, so ours look the same; null if they can't be found
+let tooltipClasses: Record<string, string> | null | undefined;
+function getTooltipClasses() {
+    if (tooltipClasses === undefined) {
+        try {
+            const c = findCssClasses("tooltip", "tooltipTop", "tooltipBottom", "tooltipPrimary", "tooltipPointer", "tooltipContent");
+            tooltipClasses = c.tooltip ? c : null;
+        } catch {
+            tooltipClasses = null;
+        }
+    }
+    return tooltipClasses;
+}
+
+let tooltipTarget: HTMLElement | null = null;
+
+function hideTooltip() {
+    tooltipTarget = null;
+    document.querySelector(`[${A_TOOLTIP}]`)?.remove();
+}
+
+function showTooltip(target: HTMLElement) {
+    const label = target.dataset.tooltip;
+    if (!label) return;
+    hideTooltip();
+
+    const rect = target.getBoundingClientRect();
+    const below = rect.top < 48;
+    const tip = document.createElement("div");
+    tip.setAttribute(A_TOOLTIP, "");
+    if (below) tip.setAttribute("data-below", "");
+    tip.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
+    tip.style.top = `${Math.round(below ? rect.bottom + 8 : rect.top - 8)}px`;
+
+    const c = getTooltipClasses();
+    const box = document.createElement("div");
+    const content = document.createElement("div");
+    content.textContent = label;
+    if (c) {
+        box.className = `${c.tooltip} ${below ? c.tooltipBottom : c.tooltipTop} ${c.tooltipPrimary}`;
+        const pointer = document.createElement("div");
+        pointer.className = c.tooltipPointer;
+        content.className = c.tooltipContent;
+        box.append(pointer, content);
+    } else {
+        tip.setAttribute("data-fallback", "");
+        box.append(content);
+    }
+    tip.append(box);
+    document.body.append(tip);
+    tooltipTarget = target;
+}
+
+// Discord-style tooltip instead of the slow browser one from the title attribute.
+// onlyInline: skip it while the element's label is already visible in the floating toolbar.
+function addTooltip(el: HTMLElement, onlyInline: boolean) {
+    el.addEventListener("mouseenter", () => {
+        if (!onlyInline || el.closest(`[${A_INLINE}]`)) showTooltip(el);
+    });
+    for (const ev of ["mouseleave", "pointerdown", "blur"])
+        el.addEventListener(ev, hideTooltip);
+}
+
 function makeButton(onClick: () => void) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -303,13 +410,15 @@ function makeButton(onClick: () => void) {
         onClick();
         scheduleUpdate();
     });
+    addTooltip(btn, true);
     return btn;
 }
 
 function setButton(btn: HTMLButtonElement, icon: keyof typeof ICONS, label: string) {
     if (btn.dataset.icon === icon) return;
     btn.dataset.icon = icon;
-    btn.title = label;
+    btn.dataset.tooltip = label;
+    btn.setAttribute("aria-label", label);
     btn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[icon]}"/></svg><span></span>`;
     btn.querySelector("span")!.textContent = label;
 }
@@ -377,7 +486,8 @@ function ensureHandle(win: Element, docked: boolean) {
     let handle = win.querySelector<HTMLDivElement>(`[${A_HANDLE}]`);
     if (!handle) {
         handle = document.createElement("div");
-        handle.title = "Drag to resize, double-click to fit the stream";
+        handle.dataset.tooltip = "Drag to resize, double-click to fit the stream";
+        addTooltip(handle, false);
         // Keep the popout from dragging itself or jumping to the call
         for (const ev of ["mousedown", "mouseup", "click"])
             handle.addEventListener(ev, e => e.stopPropagation());
@@ -503,6 +613,8 @@ function update() {
 
     observeApp(app);
     updateCallBar(app);
+    // mouseleave never fires if Discord removes the element we're hovering
+    if (tooltipTarget && !tooltipTarget.isConnected) hideTooltip();
 
     if (!win) {
         observeVideo(null);
@@ -621,6 +733,7 @@ export default definePlugin({
 
         clearMarks();
         document.querySelectorAll(`[${A_BAR}], [${A_HANDLE}], [${A_CALL_BAR}]`).forEach(el => el.remove());
+        hideTooltip();
         document.body.style.cursor = "";
         for (const v of ["--vc-sd-top", "--vc-sd-left", "--vc-sd-width", "--vc-sd-height"])
             document.documentElement.style.removeProperty(v);
