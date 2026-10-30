@@ -291,9 +291,10 @@ let resizeObserver: ResizeObserver | null = null;
 let observedApp: Element | null = null;
 let observedVideo: HTMLVideoElement | null = null;
 let rafId = 0;
-// Height we've currently taken from the app layers, to work out their original rect while they're shrunk
-let appliedHeight = 0;
-// The app layers' rect without the stream, from the last update; the drag handle measures against it
+// Where the app layers start (below Discord's title bar) when we haven't pushed them down.
+// Measured only while they're not pushed down, so it never depends on our own changes.
+let layersTop = 0;
+// The space the app layers fill without the stream, from the last update; the drag handle measures against it
 let fullTop = 0;
 let fullHeight = 0;
 // The stream's height at full window width and its own aspect ratio
@@ -320,7 +321,11 @@ function scheduleUpdate() {
 function clearMarks() {
     for (const attr of [A_WINDOW, A_ANCESTOR, A_APP, A_FILL])
         document.querySelectorAll(`[${attr}]`).forEach(el => el.removeAttribute(attr));
-    appliedHeight = 0;
+}
+
+// While minimized the window has no size, and measuring then gives nonsense
+function windowIsMeasurable() {
+    return !document.hidden && window.innerHeight > 100 && window.innerWidth > 100;
 }
 
 function isVoiceChannel(channelId: string | null | undefined) {
@@ -597,6 +602,8 @@ function updateCallBar(app: Element | null) {
 }
 
 function update() {
+    if (!windowIsMeasurable()) return;
+
     const win = document.querySelector(PIP_WINDOW);
     const app = document.querySelector(APP_LAYERS);
 
@@ -633,10 +640,12 @@ function update() {
         return;
     }
 
-    // Undo our own shrinking to get the rect the app layers would have without the stream
+    // Our changes only move the layers vertically, so their width and left edge are always accurate.
+    // The vertical space comes from the window instead: the layers run from below the title bar to the bottom.
     const rect = app!.getBoundingClientRect();
-    fullTop = rect.top - (app!.getAttribute(A_APP) === "top" ? appliedHeight : 0);
-    fullHeight = rect.height + (app!.hasAttribute(A_APP) ? appliedHeight : 0);
+    if (app!.getAttribute(A_APP) !== "top") layersTop = rect.top;
+    fullTop = layersTop;
+    fullHeight = window.innerHeight - layersTop;
 
     const aspect = video?.videoWidth && video.videoHeight ? video.videoHeight / video.videoWidth : 9 / 16;
     const savedHeight = dragHeight ?? settings.store.height;
@@ -658,7 +667,6 @@ function update() {
         document.querySelectorAll(`[${A_APP}]`).forEach(el => el.removeAttribute(A_APP));
         app!.setAttribute(A_APP, position);
     }
-    appliedHeight = height;
 
     // Any transformed ancestor would make position: fixed relative to it instead of the viewport
     const pipRoot = win.closest(PIP_ROOT);
@@ -720,6 +728,7 @@ export default definePlugin({
         observer = new MutationObserver(scheduleUpdate);
         observer.observe(document.body, { childList: true, subtree: true });
         window.addEventListener("resize", scheduleUpdate);
+        document.addEventListener("visibilitychange", scheduleUpdate);
         scheduleUpdate();
     },
 
@@ -733,6 +742,7 @@ export default definePlugin({
         dragHeight = null;
         forceDock = false;
         window.removeEventListener("resize", scheduleUpdate);
+        document.removeEventListener("visibilitychange", scheduleUpdate);
         if (rafId) cancelAnimationFrame(rafId);
         rafId = 0;
 
