@@ -11,9 +11,9 @@ $Repo = "darkspector/Vencord_CustomPlugins"
 
 $ErrorActionPreference = "Stop"
 
-# Folder name kept from when this repo only had ChannelConnectSound, so existing
-# installs keep their patch and plugin settings.
-$dataDir = Join-Path $env:LOCALAPPDATA "VencordConnectSound"
+$dataDir = Join-Path $env:LOCALAPPDATA "VencordCustomPlugins"
+# Install folder used when this repo only had ChannelConnectSound
+$oldDataDir = Join-Path $env:LOCALAPPDATA "VencordConnectSound"
 $distZip = Join-Path $dataDir "dist.zip"
 $installer = Join-Path $dataDir "VencordInstallerCli.exe"
 $discordDir = Join-Path $env:LOCALAPPDATA "Discord"
@@ -59,6 +59,19 @@ if (-not (Test-Path $update)) {
     throw "Discord not found at $discordDir. Install Discord first."
 }
 
+# Carry plugin settings and themes over from the old install folder. Only on the
+# first run: never overwrite settings that already exist in the new folder.
+$newSettings = Join-Path $dataDir "settings"
+$oldSettings = Join-Path $oldDataDir "settings"
+if ((Test-Path $oldSettings) -and -not (Test-Path $newSettings)) {
+    Write-Host "Copying settings from $oldDataDir..."
+    New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+    foreach ($sub in "settings", "themes") {
+        $src = Join-Path $oldDataDir $sub
+        if (Test-Path $src) { Copy-Item -Recurse $src (Join-Path $dataDir $sub) }
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 # 1. Download the pre-built dist
@@ -80,9 +93,18 @@ Start-DiscordAndWait
 $newest = Get-ChildItem $discordDir -Directory -Filter "app-*" |
     Sort-Object { [version]($_.Name -replace '^app-') } | Select-Object -Last 1
 
-# 4. Patch only if the up-to-date version isn't patched yet (Vencord renames the
-#    original app.asar to _app.asar when it patches).
-if (Test-Path (Join-Path $newest.FullName "resources\_app.asar")) {
+# 4. Patch only if the up-to-date version isn't patched yet, or is patched to load
+#    from somewhere else (e.g. the old install folder). Vencord renames the original
+#    app.asar to _app.asar and replaces app.asar with a small stub that requires
+#    "<data dir>\dist\patcher.js".
+$resources = Join-Path $newest.FullName "resources"
+$patchedHere = $false
+if (Test-Path (Join-Path $resources "_app.asar")) {
+    $stub = [IO.File]::ReadAllText((Join-Path $resources "app.asar")).Replace("\\", "\")
+    $patchedHere = $stub.IndexOf((Join-Path $dataDir "dist\patcher.js"), [StringComparison]::OrdinalIgnoreCase) -ge 0
+}
+
+if ($patchedHere) {
     Write-Host "[4/4] $($newest.Name) already patched."
 } else {
     Write-Host "[4/4] Patching Discord ($($newest.Name))..."
