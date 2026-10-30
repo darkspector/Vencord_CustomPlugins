@@ -1,6 +1,6 @@
 name: Build
 
-# Builds Vencord with this plugin baked in and publishes the compiled dist
+# Builds Vencord with every plugin in plugins/ baked in and publishes the compiled dist
 # as a downloadable release. End users only need install.ps1 — no Node/pnpm.
 
 on:
@@ -18,7 +18,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout this plugin
+      - name: Checkout plugins
         uses: actions/checkout@v4
         with:
           path: plugin
@@ -29,10 +29,13 @@ jobs:
           repository: Vendicated/Vencord
           path: Vencord
 
-      - name: Copy plugin into userplugins
+      - name: Copy plugins into userplugins
         run: |
-          mkdir -p Vencord/src/userplugins/channelConnectSound
-          cp plugin/index.tsx Vencord/src/userplugins/channelConnectSound/index.tsx
+          for dir in plugin/plugins/*/; do
+            name=$(basename "$dir")
+            mkdir -p "Vencord/src/userplugins/$name"
+            cp "$dir"index.ts* "Vencord/src/userplugins/$name/"
+          done
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -63,7 +66,7 @@ jobs:
           tag_name: latest
           name: Latest build
           body: |
-            Auto-built Vencord including the ChannelConnectSound plugin.
+            Auto-built Vencord including the ChannelConnectSound and StreamDock plugins.
 
             **To install:** download **vencord_install.bat** and double-click it. (No build tools needed.)
           files: |

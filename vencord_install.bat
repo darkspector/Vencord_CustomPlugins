@@ -1,15 +1,15 @@
 @echo off
-title ChannelConnectSound Installer
+title Vencord Custom Plugins Installer
 echo ============================================
-echo   ChannelConnectSound Installer
+echo   Vencord Custom Plugins Installer
 echo ============================================
 echo.
 echo This will download and patch Discord with the
-echo ChannelConnectSound plugin. No build tools needed.
+echo custom plugins. No build tools needed.
 echo.
 pause
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& { try { irm 'https://github.com/darkspector/Vencord_ChannelConnectSound/releases/latest/download/installer-core.ps1' | iex } catch { Write-Host $_.Exception.Message -ForegroundColor Red } }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { try { irm 'https://github.com/darkspector/Vencord_CustomPlugins/releases/latest/download/installer-core.ps1' | iex } catch { Write-Host $_.Exception.Message -ForegroundColor Red } }"
 
 echo.
 pause

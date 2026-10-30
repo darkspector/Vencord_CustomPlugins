@@ -1,16 +1,18 @@
-# ChannelConnectSound installer
-# Downloads the pre-built Vencord (with this plugin) and patches Discord.
+# Vencord Custom Plugins installer
+# Downloads the pre-built Vencord (with these plugins) and patches Discord.
 # No Node.js, pnpm, or building required.
 #
 # Usage: right-click this file -> Run with PowerShell
 #        (or in a terminal:  powershell -ExecutionPolicy Bypass -File installer-core.ps1)
 
 # ---- CONFIG: replace with your GitHub "user/repo" ----
-$Repo = "darkspector/Vencord_ChannelConnectSound"
+$Repo = "darkspector/Vencord_CustomPlugins"
 # ------------------------------------------------------
 
 $ErrorActionPreference = "Stop"
 
+# Folder name kept from when this repo only had ChannelConnectSound, so existing
+# installs keep their patch and plugin settings.
 $dataDir = Join-Path $env:LOCALAPPDATA "VencordConnectSound"
 $distZip = Join-Path $dataDir "dist.zip"
 $installer = Join-Path $dataDir "VencordInstallerCli.exe"
@@ -51,7 +53,7 @@ function Start-DiscordAndWait {
     } until ($ready -or (Get-Date) -gt $deadline)
 }
 
-Write-Host "ChannelConnectSound installer" -ForegroundColor Cyan
+Write-Host "Vencord Custom Plugins installer" -ForegroundColor Cyan
 
 if (-not (Test-Path $update)) {
     throw "Discord not found at $discordDir. Install Discord first."
@@ -96,4 +98,4 @@ if (Test-Path (Join-Path $newest.FullName "resources\_app.asar")) {
 }
 
 Write-Host ""
-Write-Host "Done! Enable ChannelConnectSound in Settings -> Vencord -> Plugins." -ForegroundColor Green
+Write-Host "Done! Enable the plugins in Settings -> Vencord -> Plugins." -ForegroundColor Green
