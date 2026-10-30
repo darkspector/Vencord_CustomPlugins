@@ -52,7 +52,7 @@ const settings = definePluginSettings({
     },
     startDocked: {
         type: OptionType.BOOLEAN,
-        displayName: "Start stream docked",
+        displayName: "Start Stream Docked",
         description: "When you start watching a stream, stay in your text channel with the stream docked instead of opening the full call view",
         default: true
     },

@@ -25,5 +25,5 @@ Hover over the stream to show its toolbar in the top-right corner:
 Open **User Settings → Vencord → Plugins**, find **★ StreamDock** at the top of the list, and click the cog icon.
 
 - **Auto dock**: dock the stream automatically when the popout appears. On by default.
-- **Start stream docked**: stay in your text channel when you start watching a stream, instead of opening the full call view. On by default.
+- **Start Stream Docked**: stay in your text channel when you start watching a stream, instead of opening the full call view. On by default.
 - **Position**: top or bottom of the window. The Move button changes this too, and it's remembered.
