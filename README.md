@@ -5,7 +5,7 @@ Custom [Vencord](https://vencord.dev) plugins, shipped together in one pre-built
 | Plugin | What it does |
 | --- | --- |
 | [ChannelConnectSound](plugins/channelConnectSound/README.md) | Plays a server soundboard sound when you join a voice channel. |
-| [StreamDock](plugins/streamDock/README.md) | Docks a stream into the top or bottom of the chat so you can watch and type at the same time. |
+| [StreamDock](plugins/streamDock/README.md) | Docks a stream across the top or bottom of the window so you can watch and type at the same time. |
 
 ## Install
 

@@ -11,11 +11,13 @@ import { ChannelRouter, ChannelStore, SelectedChannelStore, UserStore } from "@w
 // Discord's class names are hashed (e.g. "pictureInPictureWindow_a1b2c3"), so match on the prefix.
 const PIP_WINDOW = '[class*="pictureInPictureWindow"]';
 const PIP_ROOT = '[class*="pictureInPicture_"]';
-const CHAT = '[class*="chatContent"]';
+// Discord's stack of full-window layers (the main UI, settings, ...). Popouts, menus and tooltips live
+// in separate layer containers, so shrinking this keeps their positions lined up with the cursor.
+const APP_LAYERS = '[class*="layers_"]';
 
 const A_WINDOW = "data-vc-streamdock-window";
 const A_ANCESTOR = "data-vc-streamdock-ancestor";
-const A_CHAT = "data-vc-streamdock-chat";
+const A_APP = "data-vc-streamdock-app";
 const A_BAR = "data-vc-streamdock-bar";
 
 const GUILD_VOICE = 2;
@@ -33,7 +35,7 @@ const ICONS = {
 const settings = definePluginSettings({
     autoDock: {
         type: OptionType.BOOLEAN,
-        description: "Automatically dock the stream popout into the chat when it appears",
+        description: "Automatically dock the stream popout when it appears",
         default: true
     },
     stayInChat: {
@@ -43,7 +45,7 @@ const settings = definePluginSettings({
     },
     position: {
         type: OptionType.SELECT,
-        description: "Where in the chat the stream docks",
+        description: "Whether the stream docks at the top or bottom of the window",
         options: [
             { label: "Top", value: "top", default: true },
             { label: "Bottom", value: "bottom" }
@@ -52,7 +54,7 @@ const settings = definePluginSettings({
     },
     maxHeight: {
         type: OptionType.SLIDER,
-        description: "The stream fills the chat width at its own aspect ratio, up to this much of the chat height (%)",
+        description: "The stream fills the window width at its own aspect ratio, up to this much of the window height (%)",
         markers: makeRange(30, 90, 10),
         default: 70,
         stickToMarkers: false,
@@ -89,14 +91,12 @@ const css = `
     height: 100% !important;
     object-fit: contain !important;
 }
-[${A_CHAT}] {
-    box-sizing: border-box !important;
+[${A_APP}] {
+    height: calc(100% - var(--vc-sd-height)) !important;
+    max-height: calc(100% - var(--vc-sd-height)) !important;
 }
-[${A_CHAT}="top"] {
-    padding-top: var(--vc-sd-height) !important;
-}
-[${A_CHAT}="bottom"] {
-    padding-bottom: var(--vc-sd-height) !important;
+[${A_APP}="top"] {
+    margin-top: var(--vc-sd-height) !important;
 }
 [${A_BAR}] {
     position: absolute;
@@ -152,9 +152,11 @@ ${PIP_WINDOW}:hover [${A_BAR}], [${A_BAR}]:focus-within {
 let style: HTMLStyleElement | null = null;
 let observer: MutationObserver | null = null;
 let resizeObserver: ResizeObserver | null = null;
-let observedChat: Element | null = null;
+let observedApp: Element | null = null;
 let observedVideo: HTMLVideoElement | null = null;
 let rafId = 0;
+// Height we've currently taken from the app layers, to work out their original rect while they're shrunk
+let appliedHeight = 0;
 // null = follow autoDock; otherwise the user's explicit choice for the current popout
 let userDocked: boolean | null = null;
 let lastWindow: Element | null = null;
@@ -171,8 +173,9 @@ function scheduleUpdate() {
 }
 
 function clearMarks() {
-    for (const attr of [A_WINDOW, A_ANCESTOR, A_CHAT])
+    for (const attr of [A_WINDOW, A_ANCESTOR, A_APP])
         document.querySelectorAll(`[${attr}]`).forEach(el => el.removeAttribute(attr));
+    appliedHeight = 0;
 }
 
 function isVoiceChannel(channelId: string | null | undefined) {
@@ -224,7 +227,7 @@ function ensureButtons(win: Element, docked: boolean) {
     if (settings.store.position === "top") setButton(posBtn, "down", "Move to bottom");
     else setButton(posBtn, "up", "Move to top");
     if (docked) setButton(dockBtn, "undock", "Undock");
-    else setButton(dockBtn, "dock", "Dock to chat");
+    else setButton(dockBtn, "dock", "Dock");
     posBtn.style.display = docked ? "" : "none";
 }
 
@@ -232,11 +235,11 @@ function isDocked() {
     return userDocked ?? settings.store.autoDock;
 }
 
-function observeChat(chat: Element | null) {
-    if (chat === observedChat) return;
-    if (observedChat) resizeObserver?.unobserve(observedChat);
-    observedChat = chat;
-    if (chat) resizeObserver?.observe(chat);
+function observeApp(app: Element | null) {
+    if (app === observedApp) return;
+    if (observedApp) resizeObserver?.unobserve(observedApp);
+    observedApp = app;
+    if (app) resizeObserver?.observe(app);
 }
 
 // The video's "resize" event fires when the stream's resolution (and so its aspect ratio) is known or changes
@@ -249,7 +252,7 @@ function observeVideo(video: HTMLVideoElement | null) {
 
 function update() {
     const win = document.querySelector(PIP_WINDOW);
-    const chat = document.querySelector(CHAT);
+    const app = document.querySelector(APP_LAYERS);
 
     if (win !== lastWindow) {
         // New popout (or popout closed): forget the manual toggle
@@ -257,7 +260,7 @@ function update() {
         userDocked = null;
     }
 
-    observeChat(chat);
+    observeApp(app);
 
     if (!win) {
         observeVideo(null);
@@ -268,7 +271,7 @@ function update() {
     const video = win.querySelector("video");
     observeVideo(video);
 
-    const docked = isDocked() && !!chat;
+    const docked = isDocked() && !!app;
     ensureButtons(win, docked);
 
     if (!docked) {
@@ -276,12 +279,15 @@ function update() {
         return;
     }
 
-    // Padding is inside a border-box, so the chat's outer rect doesn't change when we pad it
-    const rect = chat!.getBoundingClientRect();
+    // Undo our own shrinking to get the rect the app layers would have without the stream
+    const rect = app!.getBoundingClientRect();
+    const fullTop = rect.top - (app!.getAttribute(A_APP) === "top" ? appliedHeight : 0);
+    const fullHeight = rect.height + (app!.hasAttribute(A_APP) ? appliedHeight : 0);
+
     const aspect = video?.videoWidth && video.videoHeight ? video.videoHeight / video.videoWidth : 9 / 16;
-    const height = Math.round(Math.min(rect.width * aspect, rect.height * settings.store.maxHeight / 100));
+    const height = Math.round(Math.min(rect.width * aspect, fullHeight * settings.store.maxHeight / 100));
     const { position } = settings.store;
-    const top = position === "top" ? rect.top : rect.bottom - height;
+    const top = position === "top" ? fullTop : fullTop + fullHeight - height;
     const root = document.documentElement.style;
     root.setProperty("--vc-sd-top", `${Math.round(top)}px`);
     root.setProperty("--vc-sd-left", `${Math.round(rect.left)}px`);
@@ -289,10 +295,11 @@ function update() {
     root.setProperty("--vc-sd-height", `${height}px`);
 
     if (!win.hasAttribute(A_WINDOW)) win.setAttribute(A_WINDOW, "");
-    if (chat!.getAttribute(A_CHAT) !== position) {
-        document.querySelectorAll(`[${A_CHAT}]`).forEach(el => el.removeAttribute(A_CHAT));
-        chat!.setAttribute(A_CHAT, position);
+    if (app!.getAttribute(A_APP) !== position) {
+        document.querySelectorAll(`[${A_APP}]`).forEach(el => el.removeAttribute(A_APP));
+        app!.setAttribute(A_APP, position);
     }
+    appliedHeight = height;
 
     // Any transformed ancestor would make position: fixed relative to it instead of the viewport
     const pipRoot = win.closest(PIP_ROOT);
@@ -306,7 +313,7 @@ function update() {
 migratePluginSettings("★ StreamDock", "StreamDock");
 export default definePlugin({
     name: "★ StreamDock",
-    description: "Docks the stream popout into the top or bottom of the chat so you can watch and text at the same time",
+    description: "Docks the stream across the top or bottom of the window and moves Discord out of its way, so you can watch and text at the same time",
     authors: [{ name: "chris", id: 0n }],
     settings,
 
@@ -317,7 +324,7 @@ export default definePlugin({
                 lastTextChannelId = channelId;
                 return;
             }
-            // Watching a stream opens its voice channel's call view; go back to the chat so the stream docks there
+            // Watching a stream opens its voice channel's call view; go back to the chat with the stream docked
             if (watchStartedAt && Date.now() - watchStartedAt < WATCH_WINDOW_MS)
                 setTimeout(returnToChat, 0);
         },
@@ -354,7 +361,7 @@ export default definePlugin({
         observer?.disconnect();
         resizeObserver?.disconnect();
         observeVideo(null);
-        observer = resizeObserver = observedChat = lastWindow = null;
+        observer = resizeObserver = observedApp = lastWindow = null;
         userDocked = null;
         watchStartedAt = 0;
         window.removeEventListener("resize", scheduleUpdate);
