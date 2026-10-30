@@ -8,7 +8,7 @@ Install it with the installer in the [main README](../../README.md).
 
 ## Using it
 
-Click **Watch** on someone's stream. Instead of opening the full-screen call view, Discord stays on the text channel you were in and the stream docks right away. Switching channels keeps it docked.
+Click **Watch** on someone's stream. Instead of opening the full-screen call view, Discord stays on the text channel you were in and the stream docks right away. Switching channels keeps it docked. To start in the full view or the mini player instead, change **Start Streams In**.
 
 The stream fills the window's width at its own shape (usually 16:9), so there's no wasted space above or below it. It never takes more than half the window height; past that it gets black bars at the sides.
 
@@ -24,6 +24,10 @@ Hover over the stream to show its buttons. They sit next to Discord's own Full S
 
 Open **User Settings → Vencord → Plugins**, find **★ StreamDock** at the top of the list, and click the cog icon.
 
-- **Auto dock**: dock the stream automatically when the popout appears. On by default.
-- **Start Stream Docked**: stay in your text channel when you start watching a stream, instead of opening the full call view. On by default.
+- **Start Streams In**: how a stream opens when you click Watch.
+  - **Docked** (default): stay in your text channel with the stream docked.
+  - **Full view**: Discord's full call view. Leaving it docks the stream.
+  - **Mini player**: stay in your text channel with Discord's floating player. Leaving the full view also goes to the mini player.
+
+  The buttons on the stream switch between all three at any time.
 - **Position**: top or bottom of the window. The Move button changes this too, and it's remembered.

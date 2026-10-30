@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { definePluginSettings, migratePluginSetting, migratePluginSettings } from "@api/Settings";
+import { definePluginSettings, migratePluginSettings, PlainSettings, Settings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
 import { findCssClasses } from "@webpack";
 import { ApplicationStreamingStore, ChannelRouter, ChannelStore, SelectedChannelStore, UserStore } from "@webpack/common";
@@ -51,16 +51,15 @@ const ICONS = {
 };
 
 const settings = definePluginSettings({
-    autoDock: {
-        type: OptionType.BOOLEAN,
-        description: "Automatically dock the stream popout when it appears",
-        default: true
-    },
-    startDocked: {
-        type: OptionType.BOOLEAN,
-        displayName: "Start Stream Docked",
-        description: "When you start watching a stream, stay in your text channel with the stream docked instead of opening the full call view",
-        default: true
+    startIn: {
+        type: OptionType.SELECT,
+        displayName: "Start Streams In",
+        description: "How a stream opens when you click Watch. Leaving the full view docks it, unless you pick Mini player.",
+        options: [
+            { label: "Docked: stay in your text channel with the stream docked", value: "docked", default: true },
+            { label: "Full view: Discord's full call view", value: "fullView" },
+            { label: "Mini player: stay in your text channel with Discord's floating player", value: "miniPlayer" }
+        ]
     },
     position: {
         type: OptionType.SELECT,
@@ -301,7 +300,7 @@ let fullHeight = 0;
 let streamHeight = 0;
 // Height (% of window) while the handle is being dragged; only saved to settings when the drag ends
 let dragHeight: number | null = null;
-// null = follow autoDock; otherwise the user's explicit choice for the current popout
+// null = follow the Start Streams In setting; otherwise the user's explicit choice for the current popout
 let userDocked: boolean | null = null;
 let lastWindow: Element | null = null;
 // Last non-voice channel the user was looking at, to return to when they start watching a stream
@@ -536,7 +535,7 @@ function clampHeight(height: number) {
 }
 
 function isDocked() {
-    return userDocked ?? settings.store.autoDock;
+    return userDocked ?? settings.store.startIn !== "miniPlayer";
 }
 
 function observeApp(app: Element | null) {
@@ -671,7 +670,13 @@ function update() {
 
 // The ★ prefix sorts our plugins to the top of the Vencord plugin list
 migratePluginSettings("★ StreamDock", "StreamDock");
-migratePluginSetting("★ StreamDock", "stayInChat", "startDocked");
+// Earlier versions had two toggles ("Auto dock" and "Start Stream Docked", once called stayInChat)
+const oldSettings = PlainSettings.plugins["★ StreamDock"];
+if (oldSettings && !("startIn" in oldSettings) && ["autoDock", "startDocked", "stayInChat"].some(k => k in oldSettings)) {
+    const startDocked = oldSettings.startDocked ?? oldSettings.stayInChat ?? true;
+    const autoDock = oldSettings.autoDock ?? true;
+    Settings.plugins["★ StreamDock"].startIn = !startDocked ? "fullView" : autoDock ? "docked" : "miniPlayer";
+}
 export default definePlugin({
     name: "★ StreamDock",
     description: "Docks the stream across the top or bottom of the window and moves Discord out of its way, so you can watch and text at the same time",
@@ -685,13 +690,13 @@ export default definePlugin({
                 lastTextChannelId = channelId;
                 return;
             }
-            // Watching a stream opens its voice channel's call view; go back to the chat with the stream docked
+            // Watching a stream opens its voice channel's call view; go back to the chat where the popout appears
             if (watchStartedAt && Date.now() - watchStartedAt < WATCH_WINDOW_MS)
                 setTimeout(returnToChat, 0);
         },
 
         STREAM_WATCH({ streamKey }: { streamKey: string; }) {
-            if (!settings.store.startDocked) return;
+            if (settings.store.startIn === "fullView") return;
             // streamKey is "guild:<guildId>:<channelId>:<userId>" or "call:<channelId>:<userId>"; skip our own Go Live
             if (streamKey?.split(":").pop() === UserStore.getCurrentUser()?.id) return;
             watchStartedAt = Date.now();
