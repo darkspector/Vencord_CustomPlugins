@@ -20,6 +20,8 @@ Hover over the stream to show its buttons. They sit next to Discord's own Full S
 - **Full view** (↕ arrows) switches to Discord's full-screen call view of the stream. While you're there, a **Dock stream** button next to Discord's Full Screen and Pop Out buttons takes you back to your text channel with the stream docked.
 - **Undock to mini player** / **Dock** switches between the docked view and Discord's normal floating popout.
 
+Right-click the stream for Discord's stream menu (**Stream Volume**, **Mute**, **Pop Out Stream** and so on). Discord's own mini player doesn't have this menu, so StreamDock adds it in both the docked view and the mini player.
+
 ## Settings
 
 Open **User Settings → Vencord → Plugins**, find **★ StreamDock** at the top of the list, and click the cog icon.

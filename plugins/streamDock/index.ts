@@ -6,8 +6,9 @@
 
 import { definePluginSettings, migratePluginSettings, PlainSettings, Settings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
-import { findCssClasses } from "@webpack";
-import { ApplicationStreamingStore, ChannelRouter, ChannelStore, SelectedChannelStore, UserStore } from "@webpack/common";
+import { extractAndLoadChunksLazy, findByCodeLazy, findCssClasses } from "@webpack";
+import { ApplicationStreamingStore, ChannelRouter, ChannelStore, ContextMenuApi, React, SelectedChannelStore, UserStore } from "@webpack/common";
+import type { UIEvent } from "react";
 
 // Discord's class names are hashed (e.g. "pictureInPictureWindow_a1b2c3"), so match on the prefix.
 const PIP_WINDOW = '[class*="pictureInPictureWindow"]';
@@ -486,6 +487,64 @@ function ensureButtons(win: Element, docked: boolean) {
     posBtn.style.display = docked ? "" : "none";
 }
 
+// Discord's right-click menu for streams (volume, mute, ...). The mini player doesn't have one, so we open it ourselves.
+// It's in a lazily loaded chunk; load it the same way the call view's stream tiles do.
+const StreamContextMenu = findByCodeLazy('"stream-context"');
+const loadStreamContextMenu = extractAndLoadChunksLazy(
+    ['"StreamContextMenu"', "exitFullscreen"],
+    /Promise\.all\(\[((?:\i\.e\("?[^)]+?"?\),?)+?)\]\)\.then\(\i\.bind\(\i,"?(\d+)"?\)\);return \i=>\(0,\i\.jsx\)\(\i,\{.{0,300}?"StreamContextMenu"/
+);
+
+// Whether a right-click at this point is on the stream, and not on a menu or dialog that's above it
+function isOnStream(e: MouseEvent) {
+    const win = document.querySelector(PIP_WINDOW);
+    if (!win) return null;
+    const r = win.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return null;
+    const top = document.elementFromPoint(e.clientX, e.clientY);
+    if (top?.closest('[role="menu"], [role="dialog"]')) return null;
+    return win;
+}
+
+// A right mouse-down would otherwise start dragging the popout, which swallows the right-click
+function onRightMouseDown(e: MouseEvent) {
+    if (e.button === 2 && isOnStream(e)) e.stopPropagation();
+}
+
+// Listens on the window, capturing, so it sees the right-click whichever element ends up as its target
+function onContextMenu(e: MouseEvent) {
+    const win = isOnStream(e);
+    const stream = win && getWatchedStream();
+    if (!stream) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Shaped like a React event, which is what Discord's menu code expects
+    const event = {
+        type: e.type,
+        target: e.target,
+        currentTarget: win,
+        nativeEvent: e,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        pageX: e.pageX,
+        pageY: e.pageY,
+        screenX: e.screenX,
+        screenY: e.screenY,
+        button: e.button,
+        shiftKey: e.shiftKey,
+        preventDefault() { },
+        stopPropagation() { },
+        isDefaultPrevented: () => true,
+        isPropagationStopped: () => true,
+        persist() { }
+    };
+    ContextMenuApi.openContextMenuLazy(event as unknown as UIEvent, async () => {
+        await loadStreamContextMenu();
+        return props => React.createElement(StreamContextMenu, { ...props, stream, appContext: "app", exitFullscreen: () => { } });
+    });
+}
+
 function ensureHandle(win: Element, docked: boolean) {
     let handle = win.querySelector<HTMLDivElement>(`[${A_HANDLE}]`);
     if (!handle) {
@@ -728,6 +787,9 @@ export default definePlugin({
         observer = new MutationObserver(scheduleUpdate);
         observer.observe(document.body, { childList: true, subtree: true });
         window.addEventListener("resize", scheduleUpdate);
+        window.addEventListener("contextmenu", onContextMenu, true);
+        window.addEventListener("mousedown", onRightMouseDown, true);
+        window.addEventListener("pointerdown", onRightMouseDown, true);
         document.addEventListener("visibilitychange", scheduleUpdate);
         scheduleUpdate();
     },
@@ -742,6 +804,9 @@ export default definePlugin({
         dragHeight = null;
         forceDock = false;
         window.removeEventListener("resize", scheduleUpdate);
+        window.removeEventListener("contextmenu", onContextMenu, true);
+        window.removeEventListener("mousedown", onRightMouseDown, true);
+        window.removeEventListener("pointerdown", onRightMouseDown, true);
         document.removeEventListener("visibilitychange", scheduleUpdate);
         if (rafId) cancelAnimationFrame(rafId);
         rafId = 0;
