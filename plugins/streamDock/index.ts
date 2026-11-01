@@ -319,6 +319,50 @@ function scheduleUpdate() {
     });
 }
 
+// Shrinking a chat keeps its scroll offset from the top, which pushes the newest messages out of view.
+// Track which chats were scrolled to the bottom and keep them there whenever their height changes.
+const PIN_SLACK = 16;
+const chatScrollers = new Map<HTMLElement, boolean>();
+let chatResizeObserver: ResizeObserver | null = null;
+
+function isAtBottom(el: HTMLElement) {
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= PIN_SLACK;
+}
+
+function onChatScroll(e: Event) {
+    const el = e.target as HTMLElement;
+    if (chatScrollers.has(el)) chatScrollers.set(el, isAtBottom(el));
+}
+
+function onChatResize(entries: ResizeObserverEntry[]) {
+    for (const { target } of entries) {
+        const el = target as HTMLElement;
+        if (chatScrollers.get(el)) el.scrollTop = el.scrollHeight;
+    }
+}
+
+function findScroller(el: Element) {
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        const { overflowY } = getComputedStyle(p);
+        if (overflowY === "auto" || overflowY === "scroll") return p;
+    }
+    return null;
+}
+
+function trackChatScrollers() {
+    for (const el of chatScrollers.keys()) {
+        if (el.isConnected) continue;
+        chatResizeObserver?.unobserve(el);
+        chatScrollers.delete(el);
+    }
+    document.querySelectorAll('[data-list-id="chat-messages"]').forEach(list => {
+        const scroller = findScroller(list);
+        if (!scroller || chatScrollers.has(scroller)) return;
+        chatScrollers.set(scroller, isAtBottom(scroller));
+        chatResizeObserver?.observe(scroller);
+    });
+}
+
 function clearMarks() {
     for (const attr of [A_WINDOW, A_ANCESTOR, A_APP, A_FILL])
         document.querySelectorAll(`[${attr}]`).forEach(el => el.removeAttribute(attr));
@@ -662,6 +706,7 @@ function updateCallBar(app: Element | null) {
 
 function update() {
     if (!windowIsMeasurable()) return;
+    trackChatScrollers();
 
     const win = document.querySelector(PIP_WINDOW);
     const app = document.querySelector(APP_LAYERS);
@@ -784,6 +829,8 @@ export default definePlugin({
         document.head.appendChild(style);
 
         resizeObserver = new ResizeObserver(scheduleUpdate);
+        chatResizeObserver = new ResizeObserver(onChatResize);
+        document.addEventListener("scroll", onChatScroll, true);
         observer = new MutationObserver(scheduleUpdate);
         observer.observe(document.body, { childList: true, subtree: true });
         window.addEventListener("resize", scheduleUpdate);
@@ -797,6 +844,10 @@ export default definePlugin({
     stop() {
         observer?.disconnect();
         resizeObserver?.disconnect();
+        chatResizeObserver?.disconnect();
+        chatResizeObserver = null;
+        chatScrollers.clear();
+        document.removeEventListener("scroll", onChatScroll, true);
         observeVideo(null);
         observer = resizeObserver = observedApp = lastWindow = null;
         userDocked = null;
