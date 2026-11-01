@@ -320,9 +320,10 @@ function scheduleUpdate() {
 }
 
 // Shrinking a chat keeps its scroll offset from the top, which pushes the newest messages out of view.
-// Track which chats were scrolled to the bottom and keep them there whenever their height changes.
+// Track which chats were scrolled to the bottom and keep them there whenever their size changes.
 const PIN_SLACK = 16;
-const chatScrollers = new Map<HTMLElement, boolean>();
+interface ChatState { pinned: boolean; width: number; height: number; }
+const chatScrollers = new Map<HTMLElement, ChatState>();
 let chatResizeObserver: ResizeObserver | null = null;
 
 function isAtBottom(el: HTMLElement) {
@@ -331,13 +332,21 @@ function isAtBottom(el: HTMLElement) {
 
 function onChatScroll(e: Event) {
     const el = e.target as HTMLElement;
-    if (chatScrollers.has(el)) chatScrollers.set(el, isAtBottom(el));
+    const state = chatScrollers.get(el);
+    // A size change we haven't handled yet means the browser moved the scroll position, not the user.
+    // That happens when the window is resized while hidden (minimized, or a Remote Desktop reconnect).
+    if (!state || el.clientWidth !== state.width || el.clientHeight !== state.height) return;
+    state.pinned = isAtBottom(el);
 }
 
 function onChatResize(entries: ResizeObserverEntry[]) {
     for (const { target } of entries) {
         const el = target as HTMLElement;
-        if (chatScrollers.get(el)) el.scrollTop = el.scrollHeight;
+        const state = chatScrollers.get(el);
+        if (!state) continue;
+        state.width = el.clientWidth;
+        state.height = el.clientHeight;
+        if (state.pinned) el.scrollTop = el.scrollHeight;
     }
 }
 
@@ -358,7 +367,7 @@ function trackChatScrollers() {
     document.querySelectorAll('[data-list-id="chat-messages"]').forEach(list => {
         const scroller = findScroller(list);
         if (!scroller || chatScrollers.has(scroller)) return;
-        chatScrollers.set(scroller, isAtBottom(scroller));
+        chatScrollers.set(scroller, { pinned: isAtBottom(scroller), width: scroller.clientWidth, height: scroller.clientHeight });
         chatResizeObserver?.observe(scroller);
     });
 }
