@@ -325,6 +325,8 @@ const PIN_SLACK = 16;
 interface ChatState { pinned: boolean; width: number; height: number; }
 const chatScrollers = new Map<HTMLElement, ChatState>();
 let chatResizeObserver: ResizeObserver | null = null;
+const FOCUS_GRACE_MS = 300;
+let focusedAt = -Infinity;
 
 function isAtBottom(el: HTMLElement) {
     return el.scrollHeight - el.scrollTop - el.clientHeight <= PIN_SLACK;
@@ -336,6 +338,11 @@ function onChatScroll(e: Event) {
     // A size change we haven't handled yet means the browser moved the scroll position, not the user.
     // That happens when the window is resized while hidden (minimized, or a Remote Desktop reconnect).
     if (!state || el.clientWidth !== state.width || el.clientHeight !== state.height) return;
+    // Likewise right after the window gets focus back (see onChatFocus)
+    if (state.pinned && performance.now() - focusedAt < FOCUS_GRACE_MS) {
+        el.scrollTop = el.scrollHeight;
+        return;
+    }
     state.pinned = isAtBottom(el);
 }
 
@@ -347,6 +354,22 @@ function onChatResize(entries: ResizeObserverEntry[]) {
         state.width = el.clientWidth;
         state.height = el.clientHeight;
         if (state.pinned) el.scrollTop = el.scrollHeight;
+    }
+}
+
+// When the window gets focus back, the browser re-focuses the message list and scrolls it "into view",
+// which while docked lands a stream's height above the bottom. Its scroll event comes later, so undo it now.
+function onWindowFocus(e: FocusEvent) {
+    if (e.target === window) focusedAt = performance.now();
+}
+
+function onChatFocus(e: FocusEvent) {
+    for (const [el, state] of chatScrollers) {
+        if (!state.pinned || !el.contains(e.target as Node)) continue;
+        el.scrollTop = el.scrollHeight;
+        requestAnimationFrame(() => {
+            if (state.pinned) el.scrollTop = el.scrollHeight;
+        });
     }
 }
 
@@ -840,6 +863,8 @@ export default definePlugin({
         resizeObserver = new ResizeObserver(scheduleUpdate);
         chatResizeObserver = new ResizeObserver(onChatResize);
         document.addEventListener("scroll", onChatScroll, true);
+        document.addEventListener("focusin", onChatFocus, true);
+        window.addEventListener("focus", onWindowFocus, true);
         observer = new MutationObserver(scheduleUpdate);
         observer.observe(document.body, { childList: true, subtree: true });
         window.addEventListener("resize", scheduleUpdate);
@@ -857,6 +882,8 @@ export default definePlugin({
         chatResizeObserver = null;
         chatScrollers.clear();
         document.removeEventListener("scroll", onChatScroll, true);
+        document.removeEventListener("focusin", onChatFocus, true);
+        window.removeEventListener("focus", onWindowFocus, true);
         observeVideo(null);
         observer = resizeObserver = observedApp = lastWindow = null;
         userDocked = null;
