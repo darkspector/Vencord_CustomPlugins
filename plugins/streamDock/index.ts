@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import type { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { definePluginSettings, migratePluginSettings, PlainSettings, Settings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
 import { extractAndLoadChunksLazy, findByCodeLazy, findCssClasses } from "@webpack";
-import { ApplicationStreamingStore, ChannelRouter, ChannelStore, ContextMenuApi, React, SelectedChannelStore, UserStore } from "@webpack/common";
+import type { ApplicationStream } from "@vencord/discord-types";
+import { ApplicationStreamingStore, ChannelRouter, ChannelStore, ContextMenuApi, GuildMemberStore, Menu, PresenceStore, React, SelectedChannelStore, UserStore } from "@webpack/common";
 import type { UIEvent } from "react";
 
 // Discord's class names are hashed (e.g. "pictureInPictureWindow_a1b2c3"), so match on the prefix.
@@ -48,6 +50,7 @@ const ICONS = {
     dock: "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 2v6h14V5H5Z",
     down: "M11 4h2v12.17l5.59-5.58L20 12l-8 8-8-8 1.41-1.41L11 16.17V4Z",
     up: "M13 20h-2V7.83l-5.59 5.58L4 12l8-8 8 8-1.41 1.41L13 7.83V20Z",
+    switchStream: "M7 7h10v3l4-4-4-4v3H5v6h2V7Zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4Z",
     fullView: "M12 5.83 15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83Zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17Z"
 };
 
@@ -284,6 +287,54 @@ ${PIP_WINDOW}:hover [${A_BAR}], [${A_BAR}]:focus-within {
 :is([${A_BAR}], [${A_CALL_BAR}]) svg path {
     fill: currentColor;
 }
+/* How many streams the Switch stream button can pick from */
+[${A_BAR}] button[data-count] {
+    position: relative;
+}
+[${A_BAR}] button[data-count]::after {
+    content: attr(data-count);
+    position: absolute;
+    top: 0;
+    right: 0;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    box-sizing: border-box;
+    border-radius: 7px;
+    background: #da373c;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
+}
+.vc-streamdock-pick {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.vc-streamdock-pick img {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.vc-streamdock-pick-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.vc-streamdock-pick-text span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.vc-streamdock-pick-sub {
+    font-size: 12px;
+    opacity: 0.7;
+}
 `;
 
 let style: HTMLStyleElement | null = null;
@@ -313,6 +364,9 @@ let lastTextChannelId: string | null = null;
 let watchStartedAt = 0;
 // Set by the Dock button in the call view so the next popout docks even if auto dock is off
 let forceDock = false;
+// Set while switching streams, so the switch keeps the current view instead of following Start Streams In
+let switchFrom: "fullView" | "chat" | null = null;
+let keepDocked: boolean | null = null;
 
 function scheduleUpdate() {
     if (rafId) return;
@@ -459,7 +513,7 @@ function addTooltip(el: HTMLElement, onlyInline: boolean) {
         el.addEventListener(ev, hideTooltip);
 }
 
-function makeButton(onClick: () => void) {
+function makeButton(onClick: (e: MouseEvent) => void) {
     const btn = document.createElement("button");
     btn.type = "button";
     // Stop the popout from treating this as a drag or a "jump to call" click
@@ -468,7 +522,7 @@ function makeButton(onClick: () => void) {
     btn.addEventListener("click", e => {
         e.stopPropagation();
         e.preventDefault();
-        onClick();
+        onClick(e);
         scheduleUpdate();
     });
     addTooltip(btn, true);
@@ -527,6 +581,7 @@ function ensureButtons(win: Element, docked: boolean) {
         bar = document.createElement("div");
         bar.setAttribute(A_BAR, "");
         bar.append(
+            makeButton(openSwitchMenu),
             makeButton(() => settings.store.position = settings.store.position === "top" ? "bottom" : "top"),
             makeButton(openFullView),
             makeButton(() => userDocked = !isDocked())
@@ -534,7 +589,11 @@ function ensureButtons(win: Element, docked: boolean) {
         win.appendChild(bar);
     }
     placeBar(bar, win, win);
-    const [posBtn, fullBtn, dockBtn] = bar.children as HTMLCollectionOf<HTMLButtonElement>;
+    const [switchBtn, posBtn, fullBtn, dockBtn] = bar.children as HTMLCollectionOf<HTMLButtonElement>;
+    const streamCount = getChannelStreams().length;
+    setButton(switchBtn, "switchStream", "Switch stream");
+    switchBtn.style.display = streamCount > 1 ? "" : "none";
+    if (switchBtn.dataset.count !== String(streamCount)) switchBtn.dataset.count = String(streamCount);
     setButton(fullBtn, "fullView", "Full view");
     if (settings.store.position === "top") setButton(posBtn, "down", "Move to bottom");
     else setButton(posBtn, "up", "Move to top");
@@ -567,19 +626,12 @@ function onRightMouseDown(e: MouseEvent) {
     if (e.button === 2 && isOnStream(e)) e.stopPropagation();
 }
 
-// Listens on the window, capturing, so it sees the right-click whichever element ends up as its target
-function onContextMenu(e: MouseEvent) {
-    const win = isOnStream(e);
-    const stream = win && getWatchedStream();
-    if (!stream) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Shaped like a React event, which is what Discord's menu code expects
-    const event = {
+// Discord's menu code expects a React event
+function toReactEvent(e: MouseEvent, currentTarget: Element) {
+    return {
         type: e.type,
         target: e.target,
-        currentTarget: win,
+        currentTarget,
         nativeEvent: e,
         clientX: e.clientX,
         clientY: e.clientY,
@@ -594,8 +646,18 @@ function onContextMenu(e: MouseEvent) {
         isDefaultPrevented: () => true,
         isPropagationStopped: () => true,
         persist() { }
-    };
-    ContextMenuApi.openContextMenuLazy(event as unknown as UIEvent, async () => {
+    } as unknown as UIEvent;
+}
+
+// Listens on the window, capturing, so it sees the right-click whichever element ends up as its target
+function onContextMenu(e: MouseEvent) {
+    const win = isOnStream(e);
+    const stream = win && getWatchedStream();
+    if (!stream) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    ContextMenuApi.openContextMenuLazy(toReactEvent(e, win), async () => {
         await loadStreamContextMenu();
         return props => React.createElement(StreamContextMenu, { ...props, stream, appContext: "app", exitFullscreen: () => { } });
     });
@@ -679,6 +741,76 @@ function getWatchedStream() {
     return ApplicationStreamingStore.getAllActiveStreams().find(s => s.ownerId !== myId) ?? null;
 }
 
+// Discord's watchStream(stream, options). Watching another stream replaces the one you're watching.
+const watchStream: (stream: ApplicationStream) => void = findByCodeLazy('type:"STREAM_WATCH"');
+
+// Same format as the streamKey in flux events: "guild:<guildId>:<channelId>:<userId>" or "call:<channelId>:<userId>"
+function getStreamKey(s: { streamType: string; guildId?: string | null; channelId: string; ownerId: string; }) {
+    return s.streamType === "guild" ? `guild:${s.guildId}:${s.channelId}:${s.ownerId}` : `call:${s.channelId}:${s.ownerId}`;
+}
+
+// Everyone else streaming in the voice channel of the stream we're watching
+function getChannelStreams() {
+    const watched = getWatchedStream();
+    if (!watched) return [];
+    const myId = UserStore.getCurrentUser()?.id;
+    return ApplicationStreamingStore.getAllApplicationStreamsForChannel(watched.channelId).filter(s => s.ownerId !== myId);
+}
+
+function switchTo(stream: ApplicationStream) {
+    // Stay in the full view if that's where we are; otherwise keep the stream docked or in the mini player as it is
+    switchFrom = isVoiceChannel(SelectedChannelStore.getChannelId()) ? "fullView" : "chat";
+    keepDocked = isDocked();
+    setTimeout(() => keepDocked = null, WATCH_WINDOW_MS);
+    watchStream(stream);
+}
+
+function streamLabel(stream: ApplicationStream, watching: boolean) {
+    const user = UserStore.getUser(stream.ownerId);
+    const name = (stream.guildId && GuildMemberStore.getNick(stream.guildId, stream.ownerId)) || user?.globalName || user?.username || "Unknown";
+    const game = PresenceStore.getActivities(stream.ownerId)?.find(a => a.type === 0)?.name;
+    const sub = [watching && "Watching", game].filter(Boolean).join(" · ");
+    return React.createElement("div", { className: "vc-streamdock-pick" },
+        user && React.createElement("img", { src: user.getAvatarURL(stream.guildId ?? undefined, 32), alt: "" }),
+        React.createElement("div", { className: "vc-streamdock-pick-text" },
+            React.createElement("span", null, name),
+            sub && React.createElement("span", { className: "vc-streamdock-pick-sub" }, sub)
+        )
+    );
+}
+
+function streamItems(streams: ApplicationStream[]) {
+    const watched = getWatchedStream();
+    const watchedKey = watched && getStreamKey(watched);
+    return streams.map(s => {
+        const watching = getStreamKey(s) === watchedKey;
+        return React.createElement(Menu.MenuItem, {
+            key: s.ownerId,
+            id: `vc-streamdock-stream-${s.ownerId}`,
+            label: streamLabel(s, watching),
+            action: watching ? undefined : () => switchTo(s)
+        });
+    });
+}
+
+function openSwitchMenu(e: MouseEvent) {
+    ContextMenuApi.openContextMenu(toReactEvent(e, e.currentTarget as Element ?? e.target as Element), () =>
+        React.createElement(Menu.Menu, { navId: "vc-streamdock-switch", onClose: ContextMenuApi.closeContextMenu, "aria-label": "Switch stream" },
+            streamItems(getChannelStreams())
+        )
+    );
+}
+
+// Adds Switch Stream to Discord's stream menu, both ours on the docked stream and Discord's in the call view
+const streamContextPatch: NavContextMenuPatchCallback = children => {
+    const streams = getChannelStreams();
+    if (streams.length < 2) return;
+    children.unshift(
+        React.createElement(Menu.MenuItem, { id: "vc-streamdock-switch", label: "Switch Stream" }, streamItems(streams)),
+        React.createElement(Menu.MenuSeparator, null)
+    );
+};
+
 function openFullView() {
     const channelId = getWatchedStream()?.channelId ?? SelectedChannelStore.getVoiceChannelId();
     if (channelId) ChannelRouter.transitionToChannel(channelId);
@@ -730,6 +862,9 @@ function update() {
         if (win && forceDock) {
             userDocked = true;
             forceDock = false;
+        } else if (win && keepDocked !== null) {
+            userDocked = keepDocked;
+            keepDocked = null;
         }
     }
 
@@ -809,7 +944,14 @@ export default definePlugin({
     authors: [{ name: "chris", id: 0n }],
     settings,
 
+    contextMenus: {
+        "stream-context": streamContextPatch
+    },
+
     flux: {
+        // Someone in the channel started or stopped streaming: update the Switch stream button
+        VOICE_STATE_UPDATES: scheduleUpdate,
+
         CHANNEL_SELECT({ channelId }: { channelId: string | null; }) {
             if (!channelId) return;
             if (!isVoiceChannel(channelId)) {
@@ -822,9 +964,12 @@ export default definePlugin({
         },
 
         STREAM_WATCH({ streamKey }: { streamKey: string; }) {
-            if (settings.store.startIn === "fullView") return;
             // streamKey is "guild:<guildId>:<channelId>:<userId>" or "call:<channelId>:<userId>"; skip our own Go Live
             if (streamKey?.split(":").pop() === UserStore.getCurrentUser()?.id) return;
+            // Switching streams keeps the current view; a new stream follows Start Streams In
+            const from = switchFrom;
+            switchFrom = null;
+            if (from === "fullView" || (!from && settings.store.startIn === "fullView")) return;
             watchStartedAt = Date.now();
             // If we were already looking at the voice channel there's no CHANNEL_SELECT to react to
             setTimeout(() => {
@@ -871,6 +1016,7 @@ export default definePlugin({
         watchStartedAt = 0;
         dragHeight = null;
         forceDock = false;
+        switchFrom = keepDocked = null;
         window.removeEventListener("resize", scheduleUpdate);
         window.removeEventListener("contextmenu", onContextMenu, true);
         window.removeEventListener("mousedown", onRightMouseDown, true);

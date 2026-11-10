@@ -16,11 +16,12 @@ To change the size, drag the edge of the stream that faces the rest of Discord (
 
 Hover over the stream to show its buttons. They sit next to Discord's own Full Screen / Pop Out buttons when the stream has them, otherwise in a toolbar in the top-right corner:
 
+- **Switch stream** (⇄ arrows, with a count badge) appears when two or more people in the voice channel are streaming. It lists them with their avatar and what they're playing; click one to watch it instead. The switch keeps your current view: docked stays docked at the same size, the mini player stays the mini player, and the full view stays the full view.
 - **Move to bottom** / **Move to top** moves the stream to the other end of the window. Discord moves out of the way either way, so it never covers anything.
 - **Full view** (↕ arrows) switches to Discord's full-screen call view of the stream. While you're there, a **Dock stream** button next to Discord's Full Screen and Pop Out buttons takes you back to your text channel with the stream docked.
 - **Undock to mini player** / **Dock** switches between the docked view and Discord's normal floating popout.
 
-Right-click the stream for Discord's stream menu (**Stream Volume**, **Mute**, **Pop Out Stream** and so on). Discord's own mini player doesn't have this menu, so StreamDock adds it in both the docked view and the mini player.
+Right-click the stream for Discord's stream menu (**Stream Volume**, **Mute**, **Pop Out Stream** and so on). When more than one person is streaming it starts with a **Switch Stream** submenu, also in the call view's stream menu. Discord's own mini player doesn't have this menu, so StreamDock adds it in both the docked view and the mini player.
 
 ## Settings
 
