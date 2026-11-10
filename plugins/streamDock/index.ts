@@ -7,7 +7,7 @@
 import { definePluginSettings, migratePluginSettings, PlainSettings, Settings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
 import { extractAndLoadChunksLazy, findByCodeLazy, findCssClasses } from "@webpack";
-import { ApplicationStreamingStore, ChannelRouter, ChannelStore, ContextMenuApi, React, SelectedChannelStore, UserStore } from "@webpack/common";
+import { ApplicationStreamingStore, ChannelRouter, ChannelStore, ContextMenuApi, FluxDispatcher, React, SelectedChannelStore, UserStore } from "@webpack/common";
 import type { UIEvent } from "react";
 
 // Discord's class names are hashed (e.g. "pictureInPictureWindow_a1b2c3"), so match on the prefix.
@@ -70,6 +70,12 @@ const settings = definePluginSettings({
             { label: "Bottom", value: "bottom" }
         ],
         onChange: () => scheduleUpdate()
+    },
+    closeEnded: {
+        type: OptionType.BOOLEAN,
+        displayName: "Close Ended Streams",
+        description: "When a stream you're watching ends, close it instead of leaving Discord's \"This stream has ended\" screen open",
+        default: true
     }
 }).withPrivateSettings<{
     // Height set with the drag handle, as % of the window height. Unset = fit the stream's aspect ratio.
@@ -679,6 +685,13 @@ function getWatchedStream() {
     return ApplicationStreamingStore.getAllActiveStreams().find(s => s.ownerId !== myId) ?? null;
 }
 
+const CLOSE_ENDED_DELAY_MS = 2000;
+
+// Same format as the streamKey in flux events: "guild:<guildId>:<channelId>:<userId>" or "call:<channelId>:<userId>"
+function getStreamKey(s: { streamType: string; guildId?: string | null; channelId: string; ownerId: string; }) {
+    return s.streamType === "guild" ? `guild:${s.guildId}:${s.channelId}:${s.ownerId}` : `call:${s.channelId}:${s.ownerId}`;
+}
+
 function openFullView() {
     const channelId = getWatchedStream()?.channelId ?? SelectedChannelStore.getVoiceChannelId();
     if (channelId) ChannelRouter.transitionToChannel(channelId);
@@ -830,6 +843,18 @@ export default definePlugin({
             setTimeout(() => {
                 if (watchStartedAt && isVoiceChannel(SelectedChannelStore.getChannelId())) returnToChat();
             }, 300);
+        },
+
+        STREAM_DELETE({ streamKey, reason }: { streamKey: string; reason: string; }) {
+            if (!settings.store.closeEnded || reason !== "stream_ended") return;
+            if (streamKey?.split(":").pop() === UserStore.getCurrentUser()?.id) return;
+            // Let "This stream has ended" show briefly; skip if it was watched again in the meantime
+            setTimeout(() => {
+                const ended = ApplicationStreamingStore.getAllActiveStreams()
+                    .some(s => getStreamKey(s) === streamKey && (s as { state?: string; }).state === "ENDED");
+                // Same action as Discord's Close Stream button, minus its stream quality survey
+                if (ended) FluxDispatcher.dispatch({ type: "STREAM_CLOSE", streamKey, canShowFeedback: false });
+            }, CLOSE_ENDED_DELAY_MS);
         }
     },
 

@@ -33,3 +33,4 @@ Open **User Settings → Vencord → Plugins**, find **★ StreamDock** at the t
 
   The buttons on the stream switch between all three at any time.
 - **Position**: top or bottom of the window. The Move button changes this too, and it's remembered.
+- **Close Ended Streams** (on by default): when a stream you're watching ends, close it two seconds after Discord shows "This stream has ended", instead of leaving that screen open until you click **Close Stream**. Works in the docked view, the mini player and the full view.
